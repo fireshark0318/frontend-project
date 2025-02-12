@@ -1,362 +1,155 @@
-import { types } from 'mobx-state-tree';
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="//fonts.googleapis.com/css2?family=Roboto:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&display=swap" rel="stylesheet">
+    <link href="//fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="theme-color" content="#000000">
+    <!--
+      Notice the use of %PUBLIC_URL% in the tags above.
+      It will be replaced with the URL of the `public` folder during the build.
+      Only files inside the `public` folder can be referenced from the HTML.
 
-import Utils from '../utils';
-import { guidGenerator } from '../utils/unique';
-import Constants, { defaultStyle } from '../core/Constants';
-import { isDefined } from '../utils/utilities';
+      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
+      work correctly both with client-side routing and a non-root public URL.
+      Learn how to configure a non-root public URL by running `npm run build`.
 
-export const HighlightMixin = types
-  .model()
-  .views(self => ({
-    get _hasSpans() {
-      // @todo is it possible that only some spans are connected?
-      return self._spans ? (
-        self._spans.every(span => span.isConnected)
-      ) : false;
-    },
-  }))
-  .actions(self => ({
-    /**
-     * Create highlights from the stored `Range`
-     */
-    applyHighlight() {
-      if (self.parent.isLoaded === false) return;
+      I think according to new design we should record not only update of result in annotation but review rejection/acceptance too, because in current way we can't show action range in the history, only result updating.
 
-      // spans in iframe disappear on every annotation switch, so check for it
-      // in iframe spans still isConnected, but window is missing
-      const isReallyConnected = Boolean(self._spans?.[0]?.ownerDocument?.defaultView);
+      In current functionality we create history record if we pass a result field. It doesn't let make a comment on review. Because we decided to relate comments to history.
+      -->
+    <link rel="stylesheet" href="/styles/main.css">
+    <title>LSF</title>
+  </head>
+  <body>
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
 
-      // Avoid calling this method twice
-      if (self._hasSpans && isReallyConnected) {
-        return;
+    <div id="header">
+      <a id="logo" href="/">
+        <img src="/images/ls_logo.svg" alt="label studio logo">
+      </a>
+      <ul id="nav">
+        <li><a href="https://labelstud.io/guide">Docs</a></li>
+        <li><a class="github-button" href="https://github.com/heartexlabs/label-studio"
+           data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star heartexlabs/label-studio on GitHub"><img src="./images/GitHub-Mark-64px.png" height="25" /></a></li>
+      </ul>
+    </div>
+
+    <div id="ls-container">
+      <div id="label-studio"></div>
+    </div>
+    <footer class="footer">
+      <span>
+        Made with <img src="/images/3nowhite.svg" height="16" /> by <a target="_blank" href="https://heartex.net">Heartex</a> in San Francisco
+      </span>
+    </footer>
+
+    <script>
+      (function (d, o) {
+          d.domReady = function (n, a) {
+              o.addEventListener && o.addEventListener("DOMContentLoaded", function e(t) {
+                  o.removeEventListener("DOMContentLoaded", e), n.call(a || d, t)
+              }) || o.attachEvent && o.attachEvent("onreadystatechange", function e(t) {
+                  "complete" === o.readyState && (o.detachEvent("onreadystatechange", e), n.call(a || d, t))
+              })
+          }
+      })(window, document);
+    </script>
+    <style>
+      body {
+        height: 100vh;
       }
 
-      const range = self.getRangeToHighlight();
-      const root = self._getRootNode();
-
-      // Avoid rendering before view is ready
-      if (!range) {
-        console.warn('No range found to highlight');
-        return;
+      #label-studio {
+        height: calc(100vh - 88px);
       }
+    </style>
+    <script>
+      const annotationHistory = [
+        //{"id":14,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "accepted","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        //{"id":15,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "updated","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        //{"id":16,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "rejected","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
 
-      if (!root) return;
+        //{"id":17,"created_by":1,"action_type": "draft-created","created_at":"2021-05-26T13:03:43.335198Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":34,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}]},
+        //{"id":18,"created_by":1,"action_type": "updated","created_at":"2021-05-26T13:03:43.335198Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":34,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}]},
+        //{"id":19,"created_by":1,"action_type": "submitted", "created_at":"2021-05-26T13:03:49.330745Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":35,"previous_annotation_history":34,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"},{"id":"ALbgPwBdmj","type":"labels","value":{"end":2215,"text":"ale8) December 31, 2017Tr","start":2190,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        {"id":19,"created_by":1,"action_type": "submitted", "created_at":"2021-05-26T13:03:49.330745Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":35,"previous_annotation_history":34,"result":[{ "original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0 }, "id": "EPcQbFzM5K", "from_name": "bbox", "to_name": "image", "type": "rectangle", "origin": "manual" }, { "original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0, "labels": ["Handwriting"]}, "id": "EPcQbFzM5K", "from_name": "label", "to_name": "image", "type": "labels", "origin": "manual"},{"original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0, "text": ["hello world"]}, "id": "EPcQbFzM5K", "from_name": "transcription", "to_name": "image", "type": "textarea", "origin": "manual"}]},
+      ]
+      domReady(function () {
+        var ls = new LabelStudio("label-studio", {
+          description: "Description",
+          interfaces: [
+              "panel",
+              "update",
+              "submit",
+              "skip",
+              "controls",
+              //"review",
+              "infobar",
+              "topbar",
+              "instruction",
+              "side-column",
+              "ground-truth",
+              "annotations:tabs",
+              "annotations:menu",
+              "annotations:current",
+              "annotations:add-new",
+              "annotations:delete",
+              'annotations:view-all',
+              "predictions:tabs",
+              "predictions:menu",
+              "auto-annotation",
+              "edit-history",
+              //"topbar:prevnext",
+          ],
+          user: {
+            "id": 1,
+            "first_name": "Nick",
+            "last_name": "Skriabin",
+            "username": "nick",
+            "email": "nick@heartex.ai",
+            "avatar": null,
+            "initials": "ni",
+          },
+          users: [
+            {
+              "id": 1,
+              "first_name": "Nick",
+              "last_name": "Skriabin",
+              "username": "nick",
+              "email": "nick@heartex.ai",
+              "avatar": null,
+              "initials": "ni",
+            }
+          ],
+          task: {
+            annotations: [],
+            predictions: [],
+            id: 1,
+            data: {
+              image: "https://htx-misc.s3.amazonaws.com/opensource/label-studio/examples/images/nick-owuor-astro-nic-visuals-wDifg5xc9Z4-unsplash.jpg"
+            }
+          },
+          history: annotationHistory,
+        });
 
-      const labelColor = self.getLabelColor();
-      const identifier = guidGenerator(5);
-      // @todo use label-based stylesheets created only once
-      const stylesheet = createSpanStylesheet(root.ownerDocument, identifier, labelColor);
-      const classNames = ['htx-highlight', stylesheet.className];
+        ls.on("storageInitialized", (store) => {
+          ls.on("selectAnnotation", (next) => {
+            if (next.type === 'annotation') {
+              store.setHistory(annotationHistory)
+            }
+          })
 
-      if (!(self.parent.showlabels ?? self.store.settings.showLabels)) {
-        classNames.push('htx-no-label');
-      }
-
-      // in this case labels presence can't be changed from settings — manual mode
-      if (isDefined(self.parent.showlabels)) {
-        classNames.push('htx-manual-label');
-      }
-
-      self._stylesheet = stylesheet;
-      self._spans = Utils.Selection.highlightRange(range, {
-        classNames,
-        label: self.getLabels(),
+          ls.on("regionFinishedDrawing", (region, list) => {
+            console.log("finish drawing", {region, list})
+          })
+        })
       });
-
-      return self._spans;
-    },
-
-    updateHighlightedText() {
-      if (!self.text) {
-        // Concatenating of spans' innerText is up to 10 times faster, but loses "\n"
-        const range = self.getRangeToHighlight();
-        const root = self._getRootNode();
-
-        if (!range || !root) {
-          return;
-        }
-        const selection = root.ownerDocument.defaultView.getSelection();
-
-        selection.removeAllRanges();
-        selection.addRange(range);
-        self.text = String(selection);
-        selection.removeAllRanges();
-      }
-    },
-
-    updateSpans() {
-      if (self._hasSpans) {
-        const lastSpan = self._spans[self._spans.length - 1];
-        const label = self.getLabels();
-
-        // label is array, string or null, so check for length
-        if (!label?.length) lastSpan.removeAttribute('data-label');
-        else lastSpan.setAttribute('data-label', label);
-      }
-    },
-
-    /**
-     * Removes current highlights
-     */
-    removeHighlight() {
-      Utils.Selection.removeRange(self._spans);
-    },
-
-    /**
-     * Update region's appearance if the label was changed
-     */
-    updateAppearenceFromState() {
-      if (!self._spans) return;
-
-      const lastSpan = self._spans[self._spans.length - 1];
-
-      self._stylesheet.setColor(self.getLabelColor());
-      Utils.Selection.applySpanStyles(lastSpan, { label: self.getLabels() });
-    },
-
-    /**
-     * Make current region selected
-     */
-    selectRegion() {
-      self.annotation.setHighlightedNode(self);
-      self.annotation.loadRegionState(self);
-
-      self.addClass(stateClass.active);
-
-      const first = self._spans?.[0];
-
-      if (!first) return;
-
-      if (first.scrollIntoViewIfNeeded) {
-        first.scrollIntoViewIfNeeded();
-      } else {
-        first.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      }
-    },
-
-    /**
-     * Unselect text region
-     */
-    afterUnselectRegion() {
-      self.removeClass(self._stylesheet?.state.active);
-    },
-
-    /**
-     * Remove stylesheet before removing the highlight itself
-     */
-    beforeDestroy() {
-      try {
-        self._stylesheet.remove();
-      } catch(e) { /* somthing went wrong */ }
-    },
-
-    /**
-     * Set cursor style of the region
-     * @param {import("prettier").CursorOptions} cursor
-     */
-    setCursor(cursor) {
-      self._stylesheet.setCursor(cursor);
-    },
-
-    /**
-     * Draw region outline
-     * @param {boolean} val
-     */
-    setHighlight(val) {
-      if (!self._stylesheet) return;
-
-      self._highlighted = val;
-
-      if (self.highlighted) {
-        self.addClass(self._stylesheet.state.highlighted);
-        self._stylesheet.setCursor(Constants.RELATION_MODE_CURSOR);
-      } else {
-        self.removeClass(self._stylesheet.state.highlighted);
-        self._stylesheet.setCursor(Constants.POINTER_CURSOR);
-      }
-    },
-
-    getLabels() {
-      return self.labeling?.mainValue ?? [];
-    },
-
-    getLabelColor() {
-      let labelColor = self.parent.highlightcolor || (self.style || self.tag || defaultStyle).fillcolor;
-
-      if (labelColor) {
-        labelColor = Utils.Colors.convertToRGBA(labelColor, 0.3);
-      }
-
-      return labelColor;
-    },
-
-    find(span) {
-      return self._spans && self._spans.indexOf(span) >= 0 ? self : undefined;
-    },
-
-    /**
-     * Add classes to all spans
-     * @param {string[]} classNames
-     */
-    addClass(classNames) {
-      if (!classNames || !self._spans) return;
-      const classList = [].concat(classNames); // convert any input to array
-
-      self._spans.forEach(span => span.classList.add(...classList));
-    },
-
-    /**
-     * Remove classes from all spans
-     * @param {string[]} classNames
-     */
-    removeClass(classNames) {
-      if (!classNames || !self._spans) return;
-      const classList = [].concat(classNames); // convert any input to array
-
-      self._spans.forEach(span => span.classList.remove(...classList));
-    },
-
-    toggleHidden(e) {
-      self.hidden = !self.hidden;
-      if (self.hidden) {
-        self.addClass('__hidden');
-      } else {
-        self.removeClass('__hidden');
-      }
-
-      e?.stopPropagation();
-    },
-  }));
-
-
-
-const stateClass = {
-  active: '__active',
-  highlighted: '__highlighted',
-  collapsed: '__collapsed',
-  hidden: '__hidden',
-  noLabel: 'htx-no-label',
-};
-
-/**
- * Creates a separate stylesheet for every region
- * @param {string} identifier GUID identifier of a region
- * @param {string} color Default label color
- */
-const createSpanStylesheet = (document, identifier, color) => {
-  const className = `.htx-highlight-${identifier}`;
-  const variables = {
-    color: `--background-color-${identifier}`,
-    cursor: `--cursor-style-${identifier}`,
-  };
-
-  const classNames = {
-    active: `${className}.${stateClass.active}:not(.${stateClass.hidden})`,
-    highlighted: `${className}.${stateClass.highlighted}`,
-  };
-
-  const activeColorOpacity = 0.8;
-  const toActiveColor = color => Utils.Colors.rgbaChangeAlpha(color, activeColorOpacity);
-
-  const initialActiveColor = toActiveColor(color);
-
-  document.documentElement.style.setProperty(variables.color, color);
-
-  const rules = {
-    [className]: `
-      background-color: var(${variables.color}) !important;
-      cursor: var(${variables.cursor}, pointer);
-      border: 1px dashed transparent;
-    `,
-    [`${className}[data-label]::after`]: `
-      padding: 2px 2px;
-      font-size: 9.5px;
-      font-weight: bold;
-      font-family: Monaco;
-      vertical-align: super;
-      content: attr(data-label);
-      line-height: 0;
-    `,
-    [classNames.active]: `
-      color: ${Utils.Colors.contrastColor(initialActiveColor)} !important;
-      ${variables.color}: ${initialActiveColor}
-    `,
-    [classNames.highlighted]: `
-      position: relative;
-      border-color: rgb(0, 174, 255);
-    `,
-    [`${className}.${stateClass.hidden}`]: `
-      border: none;
-      padding: 0;
-      pointer-events: none;
-      ${variables.color}: transparent;
-    `,
-    [`${className}.${stateClass.hidden}::before`]: `
-      display: none
-    `,
-    [`${className}.${stateClass.hidden}::after`]: `
-      display: none
-    `,
-    [`${className}.${stateClass.noLabel}::after`]: `
-      display: none
-    `,
-  };
-
-  const styleTag = document.createElement('style');
-
-  styleTag.type = 'text/css';
-  styleTag.id = `highlight-${identifier}`;
-  document.head.appendChild(styleTag);
-
-  const stylesheet = styleTag.sheet ?? styleTag.styleSheet;
-  const supportInserion = !!stylesheet.insertRule;
-  let lastRuleIndex = 0;
-
-  for (const ruleName in rules) {
-    if (!Object.prototype.hasOwnProperty.call(rules, ruleName)) continue;
-    if (supportInserion) stylesheet.insertRule(`${ruleName} { ${rules[ruleName]} } `, lastRuleIndex++);
-    else stylesheet.addRule(ruleName, rules);
-  }
-
-  /**
-   * Set region color
-   * @param {string} color
-   */
-  const setColor = color => {
-    const newActiveColor = toActiveColor(color);
-    // sheet could change during iframe transfers, so look up in the tag
-    const stylesheet = styleTag.sheet ?? styleTag.styleSheet;
-    // they are on different positions for old/new regions
-    const rule = [...stylesheet.rules].find(rule => rule.selectorText.includes('__active'));
-    const { style } = rule;
-
-    // document in a closure may be a working iframe, so go up from the tag
-    styleTag.ownerDocument.documentElement.style.setProperty(variables.color, color);
-
-    style.setProperty(variables.color, newActiveColor);
-    style.color = Utils.Colors.contrastColor(newActiveColor);
-  };
-
-  /**
-   * Set cursor style
-   * @param {string} cursor
-   */
-  const setCursor = cursor => {
-    styleTag.ownerDocument.documentElement.style.setProperty(variables.cursor, cursor);
-  };
-
-  /**
-   * Remove stylesheet
-   */
-  const remove = () => {
-    styleTag.remove();
-  };
-
-  return {
-    className: className.substr(1),
-    state: stateClass,
-    setColor,
-    setCursor,
-    remove,
-  };
-};
+    </script>
+  </body>
+</html>

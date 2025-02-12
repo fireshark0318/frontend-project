@@ -1,540 +1,220 @@
-import { destroy, getEnv, getParent, getRoot, types } from 'mobx-state-tree';
-
-import Registry from '../../core/Registry';
-import Tree from '../../core/Tree';
-import Types from '../../core/Types';
-import Utils from '../../utils';
-import { guidGenerator } from '../../core/Helpers';
-import { DataValidator, ValidationError, VALIDATORS } from '../../core/DataValidator';
-import { errorBuilder } from '../../core/DataValidator/ConfigValidator';
-import { ViewModel } from '../../tags/visual';
-import { FF_DEV_1621, FF_DEV_3034, FF_DEV_3391, FF_DEV_3617, isFF } from '../../utils/feature-flags';
-import { Annotation } from './Annotation';
-import { HistoryItem } from './HistoryItem';
-import { StoreExtender } from '../../mixins/SharedChoiceStore/extender';
-
-const SelectedItem = types.union(Annotation, HistoryItem);
-
-const AnnotationStoreModel = types
-  .model('AnnotationStore', {
-    selected: types.maybeNull(types.reference(SelectedItem)),
-    selectedHistory: types.maybeNull(types.safeReference(SelectedItem)),
-
-    root: Types.allModelsTypes(),
-    names: types.map(types.reference(Types.allModelsTypes())),
-    toNames: types.map(types.array(types.reference(Types.allModelsTypes()))),
-
-    annotations: types.array(Annotation),
-    predictions: types.array(Annotation),
-    history: types.array(HistoryItem),
-
-    viewingAllAnnotations: types.optional(types.boolean, false),
-    viewingAllPredictions: types.optional(types.boolean, false),
-
-    validation: types.maybeNull(types.array(ValidationError)),
-  })
-  .volatile(() => ({
-    initialized: false,
-  }))
-  .views(self => ({
-    get store() {
-      return getRoot(self);
-    },
-
-    get viewingAll() {
-      return self.viewingAllAnnotations || self.viewingAllPredictions;
-    },
-  }))
-  .actions(self => {
-    function toggleViewingAll() {
-      if (self.viewingAllAnnotations || self.viewingAllPredictions) {
-        if (self.selected) {
-          self.selected.unselectAll();
-          self.selected.selected = false;
-        }
-
-        self.annotations.forEach(c => {
-          c.editable = false;
-        });
-      } else {
-        selectAnnotation(self.annotations[0].id, { fromViewAll: true });
-      }
-    }
-
-    function toggleViewingAllPredictions() {
-      self.viewingAllPredictions = !self.viewingAllPredictions;
-
-      if (self.viewingAllPredictions) self.viewingAllAnnotations = false;
-
-      toggleViewingAll();
-    }
-
-    function toggleViewingAllAnnotations() {
-      self.viewingAllAnnotations = !self.viewingAllAnnotations;
-
-      if (self.viewingAllAnnotations) self.viewingAllPredictions = false;
-
-      toggleViewingAll();
-    }
-
-    function unselectViewingAll() {
-      self.viewingAllAnnotations = false;
-      self.viewingAllPredictions = false;
-    }
-
-    function _unselectAll() {
-      if (self.selected) {
-        self.selected.unselectAll();
-        self.selected.selected = false;
-      }
-    }
-
-    function _selectItem(item) {
-      self._unselectAll();
-      item.editable = false;
-      item.selected = true;
-      self.selected = item;
-      item.updateObjects();
-    }
-
-    function selectItem(id, list, resetHistory = true) {
-      unselectViewingAll();
-
-      self._unselectAll();
-
-      // sad hack with pk while sdk are not using pk everywhere
-      const c = list.find(c => c.id === id || c.pk === String(id)) || list[0];
-
-      if (!c) return null;
-      c.selected = true;
-
-      if (resetHistory) {
-        self.selectedHistory = null;
-        self.history = [];
-      }
-
-      self.selected = c;
-
-      c.updateObjects();
-      if (c.type === 'annotation') c.setInitialValues();
-
-      return c;
-    }
-
-    /**
-   * Select annotation
-   * @param {*} id
-   */
-    function selectAnnotation(id, options = {}) {
-      if (!self.annotations.length) return null;
-
-      const { selected } = self;
-      const c = selectItem(id, self.annotations, !options.retainHistory);
-
-      c.editable = true;
-      c.setupHotKeys();
-
-      getEnv(self).events.invoke('selectAnnotation', c, selected, options ?? {});
-      if (c.pk) getParent(self).addAnnotationToTaskHistory(c.pk);
-      return c;
-    }
-
-    function selectPrediction(id) {
-      const p = selectItem(id, self.predictions);
-
-      return p;
-    }
-
-    function deleteAnnotation(annotation) {
-      getEnv(self).events.invoke('deleteAnnotation', self.store, annotation);
-
-      /**
-     * MST destroy annotation
-     */
-      destroy(annotation);
-
-      self.selected = null;
-      /**
-     * Select other annotation
-     */
-      if (self.annotations.length > 0) {
-        self.selectAnnotation(self.annotations[0].id);
-      }
-    }
-
-    function showError(err) {
-      if (err) self.addErrors([errorBuilder.generalError(err)]);
-      // we have to return at least empty View to display interface
-      return (self.root = ViewModel.create({ id: 'error' }));
-    }
-
-    function upsertToName(node) {
-      const val = self.toNames.get(node.toname);
-
-      if (val) {
-        val.push(node.name);
-      } else {
-        self.addToName(node);
-      }
-    }
-
-    function addToName(node) {
-      self.toNames.set(node.toname, [node.name]);
-    }
-
-    function addName(node) {
-      self.names.put(node);
-    }
-
-    function initRoot(config) {
-      if (self.root) return;
-
-      if (!config) {
-        return (self.root = ViewModel.create({ id: 'empty' }));
-      }
-
-      // convert config to mst model
-      let rootModel;
-
-      try {
-        rootModel = Tree.treeToModel(config, self.store);
-      } catch (e) {
-        console.error(e);
-        return showError(e);
-      }
-      const modelClass = Registry.getModelByTag(rootModel.type);
-      // hacky way to get all the available object tag names
-      const objectTypes = Registry.objectTypes().map(type => type.name.replace('Model', '').toLowerCase());
-      const objects = [];
-
-      self.validate(VALIDATORS.CONFIG, rootModel);
-
-      try {
-        self.root = modelClass.create(rootModel);
-      } catch (e) {
-        console.error(e);
-        return showError(e);
-      }
-
-      if (isFF(FF_DEV_3391)) {
-        // initialize toName bindings [DOCS] name & toName are used to
-        // connect different components to each other
-        const { names, toNames } = Tree.extractNames(self.root);
-
-        names.forEach(tag => self.names.put(tag));
-        toNames.forEach((tags, name) => self.toNames.set(name, tags));
-
-        Tree.traverseTree(self.root, node => {
-          if (self.store.task && node.updateValue) node.updateValue(self.store);
-        });
-
-        self.initialized = true;
-
-        return self.root;
-      }
-
-      // initialize toName bindings [DOCS] name & toName are used to
-      // connect different components to each other
-      Tree.traverseTree(self.root, node => {
-        if (node?.name) {
-          self.addName(node);
-          if (objectTypes.includes(node.type)) objects.push(node.name);
-        }
-
-        const isControlTag = node.name && !objectTypes.includes(node.type);
-        // auto-infer missed toName if there is only one object tag in the config
-
-        if (isControlTag && !node.toname && objects.length === 1) {
-          node.toname = objects[0];
-        }
-
-        if (node && node.toname) {
-          self.upsertToName(node);
-        }
-
-        if (self.store.task && node.updateValue) node.updateValue(self.store);
-      });
-
-      self.initialized = true;
-
-      return self.root;
-    }
-
-    function findNonInteractivePredictionResults() {
-      return self.predictions.reduce((results, prediction) => {
-        return [
-          ...results,
-          ...prediction._initialAnnotationObj.filter(result => result.interactive_mode === false).map(r => ({ ...r })),
-        ];
-      }, []);
-    }
-
-    function createItem(options) {
-      const { user, config } = self.store;
-
-      if (!self.root) initRoot(config);
-
-      let pk = options.pk || options.id;
-
-      if (options.type === 'annotation' && pk && isNaN(pk)) {
-        /* something happened where our annotation pk was replaced with the id */
-        pk = self.annotations?.[self.annotations.length - 1]?.storedValue?.pk;
-      }
-
-      //
-      const node = {
-        userGenerate: false,
-        createdDate: Utils.UDate.currentISODate(),
-
-        ...options,
-
-        // id is internal so always new to prevent collisions
-        id: guidGenerator(5),
-        // pk and id may be missing, so undefined | string
-        pk: pk && String(pk),
-        root: self.root,
-      };
-
-      if (user && !('createdBy' in node)) node['createdBy'] = user.displayName;
-      if (options.user) node.user = options.user;
-
-      return node;
-    }
-
-    function addPrediction(options = {}) {
-      options.editable = false;
-      options.type = 'prediction';
-
-      const item = createItem(options);
-
-      self.predictions.unshift(item);
-
-      const record = self.predictions[0];
-
-      return record;
-    }
-
-    function addAnnotation(options = {}) {
-      options.type = 'annotation';
-
-      const item = createItem(options);
-
-      if (item.userGenerate) {
-        let actual_user;
-
-        if (isFF(FF_DEV_3034)) {
-        // drafts can be created by other user, but we don't have much info
-        // so parse "id", get email and find user by it
-          const email = item.createdBy?.replace(/,\s*\d+$/, '');
-          const user = email && self.store.users.find(user => user.email === email);
-
-          if (user) actual_user = user.id;
-        }
-        item.completed_by = actual_user ?? getRoot(self).user?.id ?? undefined;
-      }
-
-      self.annotations.unshift(item);
-
-      const record = self.annotations[0];
-
-      record.addVersions({
-        result: options.result,
-        draft: options.draft,
-      });
-
-      return record;
-    }
-
-    function createAnnotation(options = { userGenerate: true }) {
-      const result = isFF(FF_DEV_1621) ? findNonInteractivePredictionResults() : [];
-      const c = self.addAnnotation({ ...options, result });
-
-      if (result && result.length) {
-        const ids = {};
-
-        // Area id is <uniq-id>#<annotation-id> to be uniq across all tree
-        result.forEach(r => {
-          if ('id' in r) {
-            const id = r.id.replace(/#.*$/, `#${c.id}`);
-
-            ids[r.id] = id;
-            r.id = id;
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="//fonts.googleapis.com/css2?family=Roboto:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&display=swap" rel="stylesheet">
+    <link href="//fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="theme-color" content="#000000">
+    <!--
+      Notice the use of %PUBLIC_URL% in the tags above.
+      It will be replaced with the URL of the `public` folder during the build.
+      Only files inside the `public` folder can be referenced from the HTML.
+
+      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
+      work correctly both with client-side routing and a non-root public URL.
+      Learn how to configure a non-root public URL by running `npm run build`.
+
+      I think according to new design we should record not only update of result in annotation but review rejection/acceptance too, because in current way we can't show action range in the history, only result updating.
+
+      In current functionality we create history record if we pass a result field. It doesn't let make a comment on review. Because we decided to relate comments to history.
+      -->
+    <link rel="stylesheet" href="/styles/main.css">
+    <title>LSF</title>
+  </head>
+  <body>
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
+
+    <div id="header">
+      <a id="logo" href="/">
+        <img src="/images/ls_logo.svg" alt="label studio logo">
+      </a>
+      <ul id="nav">
+        <li><a href="https://labelstud.io/guide">Docs</a></li>
+        <li><a class="github-button" href="https://github.com/heartexlabs/label-studio"
+           data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star heartexlabs/label-studio on GitHub"><img src="./images/GitHub-Mark-64px.png" height="25" /></a></li>
+      </ul>
+    </div>
+
+    <div id="ls-container">
+      <div id="label-studio"></div>
+    </div>
+    <footer class="footer">
+      <span>
+        Made with <img src="/images/3nowhite.svg" height="16" /> by <a target="_blank" href="https://heartex.net">Heartex</a> in San Francisco
+      </span>
+    </footer>
+
+    <script>
+      (function (d, o) {
+          d.domReady = function (n, a) {
+              o.addEventListener && o.addEventListener("DOMContentLoaded", function e(t) {
+                  o.removeEventListener("DOMContentLoaded", e), n.call(a || d, t)
+              }) || o.attachEvent && o.attachEvent("onreadystatechange", function e(t) {
+                  "complete" === o.readyState && (o.detachEvent("onreadystatechange", e), n.call(a || d, t))
+              })
           }
-        });
-
-        result.forEach(r => {
-          if (r.parent_id) {
-            if (ids[r.parent_id]) r.parent_id = ids[r.parent_id];
-            // impossible case but to not break the app better to reset it
-            else r.parent_id = null;
-          }
-        });
-
-        selectAnnotation(c.id);
-        c.deserializeAnnotation(result);
-        // reinit will trigger `updateObjects()` so we omit it here
-        c.reinitHistory();
-      } else {
-        c.setDefaultValues();
-      }
-      return c;
-    }
-
-
-    function addHistory(options = {}) {
-      options.type = 'history';
-
-      const item = createItem(options);
-
-      self.history.push(item);
-
-      const record = self.history[self.history.length - 1];
-
-      return record;
-    }
-
-    function clearHistory() {
-      self.history.forEach(item => destroy(item));
-      self.history.length = 0;
-    }
-
-    function selectHistory(item) {
-      self.selectedHistory = item;
-      setTimeout(() => {
-      // update classifications after render
-        const updatedItem = item ?? self.selected;
-
-        Array.from(updatedItem.names.values())
-          .filter(t => t.isClassification)
-          .forEach(t => t.updateFromResult([]));
-
-        updatedItem?.results
-          .filter(r => r.area.classification)
-          .forEach(r => r.from_name.updateFromResult?.(r.mainValue));
-      });
-    }
-
-    function addAnnotationFromPrediction(entity) {
-    // immutable work, because we'll change ids soon
-      const s = entity._initialAnnotationObj.map(r => ({ ...r }));
-      const c = self.addAnnotation({ userGenerate: true, result: s });
-
-      const ids = {};
-
-      // Area id is <uniq-id>#<annotation-id> to be uniq across all tree
-      s.forEach(r => {
-        if ('id' in r) {
-          const id = r.id.replace(/#.*$/, `#${c.id}`);
-
-          ids[r.id] = id;
-          r.id = id;
-        }
-      });
-
-      s.forEach(r => {
-        if (r.parent_id) {
-          if (ids[r.parent_id]) r.parent_id = ids[r.parent_id];
-          // impossible case but to not break the app better to reset it
-          else r.parent_id = null;
-        }
-      });
-
-      selectAnnotation(c.id);
-      c.deserializeAnnotation(s);
-      // reinit will trigger `updateObjects()` so we omit it here
-      c.reinitHistory();
-
-      // parent link for the new annotations
-      if (entity.pk) {
-        if (entity.type === 'prediction') {
-          c.parent_prediction = parseInt(entity.pk);
-        }
-        else if (entity.type === 'annotation') {
-          c.parent_annotation = parseInt(entity.pk);
-        }
+      })(window, document);
+    </script>
+    <style>
+      body {
+        height: 100vh;
       }
 
-      return c;
+      #label-studio {
+        height: calc(100vh - 88px);
+      }
+    </style>
+    <script>
+      const annotationHistory = [
+        //{"id":14,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "accepted","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        //{"id":15,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "updated","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        //{"id":16,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "rejected","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+
+
+  return content ? (
+    <Block name="region-meta">
+      {content}
+    </Block>
+  ) : null;
+});
+
+export const RegionDetailsMain: FC<{region: any}> = observer(({
+  region,
+}) => {
+  return (
+    <>
+      <Elem name="result">
+        {(region?.results as any[]).map((res) => <ResultItem key={res.pid} result={res}/>)}
+        {region?.text ? (
+          <Block name="region-meta">
+            <Elem name="item">
+              <Elem
+                name="content"
+                mod={{ type: 'text' }}
+                dangerouslySetInnerHTML={{
+                  __html: region.text.replace(/\\n/g, '\n'),
+                }}
+              />
+            </Elem>
+          </Block>
+        ) : null}
+      </Elem>
+      <RegionEditor region={region}/>
+    </>
+  );
+});
+
+type RegionDetailsMetaProps = {
+  region: any,
+  editMode?: boolean,
+  cancelEditMode?: () => void,
+  enterEditMode?: () => void,
+}
+
+export const RegionDetailsMeta: FC<RegionDetailsMetaProps> = observer(({
+  region,
+  editMode,
+  cancelEditMode,
+  enterEditMode,
+}) => {
+  const bem = useBEM();
+  const input = useRef<HTMLTextAreaElement | null>();
+
+  const saveMeta = (value: string) => {
+    region.setMetaInfo(value);
+    region.setNormInput(value);
+  };
+
+  useEffect(() => {
+    if (editMode && input.current) {
+      const { current } = input;
+
+      current.focus();
+      current.setSelectionRange(current.value.length, current.value.length);
     }
+  }, [editMode]);
 
-    /** ERRORS HANDLING */
-    const handleErrors = errors => {
-      self.addErrors(errors);
-    };
+        //{"id":17,"created_by":1,"action_type": "draft-created","created_at":"2021-05-26T13:03:43.335198Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":34,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}]},
+        //{"id":18,"created_by":1,"action_type": "updated","created_at":"2021-05-26T13:03:43.335198Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":34,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}]},
+        //{"id":19,"created_by":1,"action_type": "submitted", "created_at":"2021-05-26T13:03:49.330745Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":35,"previous_annotation_history":34,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"},{"id":"ALbgPwBdmj","type":"labels","value":{"end":2215,"text":"ale8) December 31, 2017Tr","start":2190,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        {"id":19,"created_by":1,"action_type": "submitted", "created_at":"2021-05-26T13:03:49.330745Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":35,"previous_annotation_history":34,"result":[{ "original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0 }, "id": "EPcQbFzM5K", "from_name": "bbox", "to_name": "image", "type": "rectangle", "origin": "manual" }, { "original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0, "labels": ["Handwriting"]}, "id": "EPcQbFzM5K", "from_name": "label", "to_name": "image", "type": "labels", "origin": "manual"},{"original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0, "text": ["hello world"]}, "id": "EPcQbFzM5K", "from_name": "transcription", "to_name": "image", "type": "textarea", "origin": "manual"}]},
+      ]
+      domReady(function () {
+        var ls = new LabelStudio("label-studio", {
+          description: "Description",
+          interfaces: [
+              "panel",
+              "update",
+              "submit",
+              "skip",
+              "controls",
+              //"review",
+              "infobar",
+              "topbar",
+              "instruction",
+              "side-column",
+              "ground-truth",
+              "annotations:tabs",
+              "annotations:menu",
+              "annotations:current",
+              "annotations:add-new",
+              "annotations:delete",
+              'annotations:view-all',
+              "predictions:tabs",
+              "predictions:menu",
+              "auto-annotation",
+              "edit-history",
+              //"topbar:prevnext",
+          ],
+          user: {
+            "id": 1,
+            "first_name": "Nick",
+            "last_name": "Skriabin",
+            "username": "nick",
+            "email": "nick@heartex.ai",
+            "avatar": null,
+            "initials": "ni",
+          },
+          users: [
+            {
+              "id": 1,
+              "first_name": "Nick",
+              "last_name": "Skriabin",
+              "username": "nick",
+              "email": "nick@heartex.ai",
+              "avatar": null,
+              "initials": "ni",
+            }
+          ],
+          task: {
+            annotations: [],
+            predictions: [],
+            id: 1,
+            data: {
+              image: "https://htx-misc.s3.amazonaws.com/opensource/label-studio/examples/images/nick-owuor-astro-nic-visuals-wDifg5xc9Z4-unsplash.jpg"
+            }
+          },
+          history: annotationHistory,
+        });
 
-    const addErrors = errors => {
-      const ids = [];
 
-      const newErrors = [...(self.validation ?? []), ...errors].reduce((res, error) => {
-        const id = error.identifier;
+        ls.on("storageInitialized", (store) => {
+          ls.on("selectAnnotation", (next) => {
+            if (next.type === 'annotation') {
+              store.setHistory(annotationHistory)
+            }
+          })
 
-        if (ids.indexOf(id) < 0) {
-          ids.push(id);
-          res.push(error);
-        }
-
-        return res;
-      }, []);
-
-      self.validation = newErrors;
-    };
-
-    const afterCreate = () => {
-      self._validator = new DataValidator();
-      self._validator.addErrorCallback(handleErrors);
-    };
-
-    const beforeDestroy = () => {
-      self._validator.removeErrorCallback(handleErrors);
-    };
-
-    const validate = (validatorName, data) => {
-      return self._validator.validate(validatorName, data);
-    };
-
-    const resetAnnotations = () => {
-      self.selected = null;
-      self.selectedHistory = null;
-      self.annotations = [];
-      self.predictions = [];
-      self.history = [];
-    };
-
-    return {
-      afterCreate,
-      beforeDestroy,
-
-      toggleViewingAllAnnotations,
-      toggleViewingAllPredictions,
-
-      initRoot,
-      addToName,
-      addName,
-      upsertToName,
-
-      addPrediction,
-      addAnnotation,
-      createAnnotation,
-      addAnnotationFromPrediction,
-      addHistory,
-      clearHistory,
-      selectHistory,
-
-      addErrors,
-      validate,
-
-      selectAnnotation,
-      selectPrediction,
-
-      _selectItem,
-      _unselectAll,
-
-      deleteAnnotation,
-      resetAnnotations,
-    };
-  });
-
-export default types.compose('AnnotationStore',
-  AnnotationStoreModel,
-  ...(isFF(FF_DEV_3617) ? [StoreExtender] : []),
-);
+          ls.on("regionFinishedDrawing", (region, list) => {
+            console.log("finish drawing", {region, list})
+          })
+        })
+      });
+    </script>
+  </body>
+</html>

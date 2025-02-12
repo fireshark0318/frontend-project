@@ -1,464 +1,220 @@
-import React, { Component } from 'react';
-import { htmlEscape, matchesSelector, moveStylesBetweenHeadTags } from '../../../utils/html';
-import ObjectTag from '../../../components/Tags/Object';
-import * as xpath from 'xpath-range';
-import { inject, observer } from 'mobx-react';
-import Utils from '../../../utils';
-import { fixCodePointsInRange } from '../../../utils/selection-tools';
-import './RichText.styl';
-import { isAlive } from 'mobx-state-tree';
-import { LoadingOutlined } from '@ant-design/icons';
-import { Block, cn, Elem } from '../../../utils/bem';
-import { observe } from 'mobx';
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="//fonts.googleapis.com/css2?family=Roboto:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&display=swap" rel="stylesheet">
+    <link href="//fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="theme-color" content="#000000">
+    <!--
+      Notice the use of %PUBLIC_URL% in the tags above.
+      It will be replaced with the URL of the `public` folder during the build.
+      Only files inside the `public` folder can be referenced from the HTML.
 
-const DBLCLICK_TIMEOUT = 450; // ms
-const DBLCLICK_RANGE = 5; // px
+      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
+      work correctly both with client-side routing and a non-root public URL.
+      Learn how to configure a non-root public URL by running `npm run build`.
 
-class RichTextPieceView extends Component {
-  _regionSpanSelector = '.htx-highlight';
+      I think according to new design we should record not only update of result in annotation but review rejection/acceptance too, because in current way we can't show action range in the history, only result updating.
 
-  loadingRef = React.createRef();
+      In current functionality we create history record if we pass a result field. It doesn't let make a comment on review. Because we decided to relate comments to history.
+      -->
+    <link rel="stylesheet" href="/styles/main.css">
+    <title>LSF</title>
+  </head>
+  <body>
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
 
-  // store value of first selected label during double click to apply it later
-  doubleClickSelection;
+    <div id="header">
+      <a id="logo" href="/">
+        <img src="/images/ls_logo.svg" alt="label studio logo">
+      </a>
+      <ul id="nav">
+        <li><a href="https://labelstud.io/guide">Docs</a></li>
+        <li><a class="github-button" href="https://github.com/heartexlabs/label-studio"
+           data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star heartexlabs/label-studio on GitHub"><img src="./images/GitHub-Mark-64px.png" height="25" /></a></li>
+      </ul>
+    </div>
 
-  _selectRegions = (additionalMode) => {
-    const { item } = this.props;
-    const root = item.visibleNodeRef.current;
-    const selection = window.getSelection();
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
-    const regions = [];
+    <div id="ls-container">
+      <div id="label-studio"></div>
+    </div>
+    <footer class="footer">
+      <span>
+        Made with <img src="/images/3nowhite.svg" height="16" /> by <a target="_blank" href="https://heartex.net">Heartex</a> in San Francisco
+      </span>
+    </footer>
 
-    while (walker.nextNode()) {
-      const node = walker.currentNode;
-
-      if (node.nodeName === 'SPAN' && node.matches(this._regionSpanSelector) && selection.containsNode(node)) {
-        const region = this._determineRegion(node);
-
-        regions.push(region);
-      }
-    }
-    if (regions.length) {
-      item.annotation.extendSelectionWith(regions);
-      if (additionalMode) {
-        item.annotation.extendSelectionWith(regions);
-      } else {
-        item.annotation.selectAreas(regions);
-      }
-      selection.removeAllRanges();
-    }
-  };
-
-  _onMouseUp = (ev) => {
-    const { item } = this.props;
-    const states = item.activeStates();
-    const rootEl = item.visibleNodeRef.current;
-    const root = rootEl?.contentDocument?.body ?? rootEl;
-
-    if (!states || states.length === 0 || ev.ctrlKey || ev.metaKey) return this._selectRegions(ev.ctrlKey || ev.metaKey);
-    if (item.selectionenabled === false || item.annotation.isReadOnly()) return;
-    const label = states[0]?.selectedLabels?.[0];
-    const value = states[0]?.selectedValues?.();
-
-    Utils.Selection.captureSelection(({ selectionText, range }) => {
-      if (!range || range.collapsed || !root.contains(range.startContainer) || !root.contains(range.endContainer)) {
-        return;
-      }
-
-      fixCodePointsInRange(range);
-
-      const normedRange = xpath.fromRange(range, root);
-
-      if (!normedRange) return;
-
-      if (this.doubleClickSelection && (
-        Date.now() - this.doubleClickSelection.time > DBLCLICK_TIMEOUT
-        || Math.abs(ev.pageX - this.doubleClickSelection.x) > DBLCLICK_RANGE
-        || Math.abs(ev.pageY - this.doubleClickSelection.y) > DBLCLICK_RANGE
-      )) {
-        this.doubleClickSelection = undefined;
+    <script>
+      (function (d, o) {
+          d.domReady = function (n, a) {
+              o.addEventListener && o.addEventListener("DOMContentLoaded", function e(t) {
+                  o.removeEventListener("DOMContentLoaded", e), n.call(a || d, t)
+              }) || o.attachEvent && o.attachEvent("onreadystatechange", function e(t) {
+                  "complete" === o.readyState && (o.detachEvent("onreadystatechange", e), n.call(a || d, t))
+              })
+          }
+      })(window, document);
+    </script>
+    <style>
+      body {
+        height: 100vh;
       }
 
-      normedRange._range = range;
-      normedRange.text = selectionText;
-      normedRange.isText = item.type === 'text';
-      normedRange.dynamic = this.props.store.autoAnnotation;
-      item.addRegion(normedRange, this.doubleClickSelection);
-    }, {
-      window: rootEl?.contentWindow ?? window,
-      granularity: label?.granularity ?? item.granularity,
-      beforeCleanup: () => {
-        this.doubleClickSelection = undefined;
-        this._selectionMode = true;
-      },
-    });
-    this.doubleClickSelection = {
-      time: Date.now(),
-      value: value?.length ? value : undefined,
-      x: ev.pageX,
-      y: ev.pageY,
-    };
-  };
-
-  /**
-   * @param {MouseEvent} event
-   */
-  _onRegionClick = event => {
-    if (this._selectionMode) {
-      this._selectionMode = false;
-      return;
-    }
-    if (!this.props.item.clickablelinks && matchesSelector(event.target, 'a[href]')) {
-      event.preventDefault();
-      return;
-    }
-
-    const region = this._determineRegion(event.target);
-
-    if (!region) return;
-    region && region.onClickRegion(event);
-    event.stopPropagation();
-  };
-
-  /**
-   * @param {MouseEvent} event
-   */
-  _onRegionMouseOver = event => {
-    const region = this._determineRegion(event.target);
-    const { item } = this.props;
-
-    item.setHighlight(region);
-  };
-
-  _removeChildrenFrom(el) {
-    while (el.lastChild) {
-      el.removeChild(el.lastChild);
-    }
-  }
-
-  _moveElements(src, dest, withSubstitution) {
-    const fragment = document.createDocumentFragment();
-
-    for (let i = 0;i < src.childNodes.length;  withSubstitution && i++){
-      const currentChild = src.childNodes[i];
-
-      if (withSubstitution) {
-        const cloneChild = currentChild.cloneNode(true);
-
-        src.replaceChild(cloneChild, currentChild);
+      #label-studio {
+        height: calc(100vh - 88px);
       }
+    </style>
+    <script>
+      const annotationHistory = [
+        //{"id":14,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "accepted","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        //{"id":15,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "updated","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        //{"id":16,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "rejected","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
 
-      fragment.append(currentChild);
-    }
-    this._removeChildrenFrom(dest);
-    dest.appendChild(fragment);
-  }
 
-  _moveStyles = moveStylesBetweenHeadTags;
+  return content ? (
+    <Block name="region-meta">
+      {content}
+    </Block>
+  ) : null;
+});
 
-  _moveElementsToWorkingNode = () => {
-    const { item } = this.props;
-    const rootEl = item.visibleNodeRef.current;
-    const workingEl = item.workingNodeRef.current;
+export const RegionDetailsMain: FC<{region: any}> = observer(({
+  region,
+}) => {
+  return (
+    <>
+      <Elem name="result">
+        {(region?.results as any[]).map((res) => <ResultItem key={res.pid} result={res}/>)}
+        {region?.text ? (
+          <Block name="region-meta">
+            <Elem name="item">
+              <Elem
+                name="content"
+                mod={{ type: 'text' }}
+                dangerouslySetInnerHTML={{
+                  __html: region.text.replace(/\\n/g, '\n'),
+                }}
+              />
+            </Elem>
+          </Block>
+        ) : null}
+      </Elem>
+      <RegionEditor region={region}/>
+    </>
+  );
+});
 
-    if (item.inline) {
-      this._moveElements(rootEl, workingEl, true);
-    } else {
-      const rootHtml = rootEl.contentDocument.documentElement;
-      const rootBody = rootEl.contentDocument.body;
-      const workingHtml = workingEl.contentDocument.documentElement;
-      const workingHead = workingEl.contentDocument.head;
-      const workingBody = workingEl.contentDocument.body;
-
-      workingHtml.setAttribute('style', rootHtml.getAttribute('style'));
-      this._removeChildrenFrom(workingHead);
-      this._moveElements(rootBody, workingBody, true);
-    }
-    item.setWorkingMode(true);
-  };
-
-  _returnElementsFromWorkingNode = () => {
-    const { item } = this.props;
-    const rootEl = item.visibleNodeRef.current;
-    const workingEl = item.workingNodeRef.current;
-
-    if (item.inline) {
-      this._moveElements(workingEl, rootEl);
-    } else {
-      const rootHtml = rootEl.contentDocument.documentElement;
-      const rootHead = rootEl.contentDocument.head;
-      const rootBody = rootEl.contentDocument.body;
-      const workingHtml = workingEl.contentDocument.documentElement;
-      const workingHead = workingEl.contentDocument.head;
-      const workingBody = workingEl.contentDocument.body;
-
-      rootHtml.setAttribute('style', workingHtml.getAttribute('style'));
-      this._moveStyles(workingHead, rootHead);
-      this._moveElements(workingBody, rootBody);
-    }
-    item.setWorkingMode(false);
-  };
-
-  /**
-   * Handle initial rendering and all subsequent updates
-   */
-  _handleUpdate(initial = false) {
-    const { item } = this.props;
-    const rootEl = item.visibleNodeRef.current;
-    const root = rootEl?.contentDocument?.body ?? rootEl;
-
-    if (!item.inline) {
-      if (!root || root.tagName === 'IFRAME' || !root.childNodes.length || item.isLoaded === false) return;
-    }
-
-    // Apply highlight to ranges of a current tag
-    // Also init regions' offsets and html range on initial load
-
-    if (initial && item.annotation) {
-      const { history, pauseAutosave, startAutosave } = item.annotation;
-
-      pauseAutosave();
-      history.freeze('richtext:init');
-      item.needsUpdate();
-      history.setReplaceNextUndoState(true);
-      history.unfreeze('richtext:init');
-      startAutosave();
-    } else {
-      item.needsUpdate();
-    }
-  }
-
-  /**
-   * Detects a RichTextRegion corresponding to a span
-   * @param {HTMLElement} element
-   */
-  _determineRegion(element) {
-    if (matchesSelector(element, this._regionSpanSelector)) {
-      const span = element.tagName === 'SPAN' ? element : element.closest(this._regionSpanSelector);
-      const { item } = this.props;
-
-      return item.regs.find(region => region.find(span));
-    }
-  }
-
-  componentDidMount() {
-    const { item } = this.props;
-
-    item.setNeedsUpdateCallbacks(
-      this._moveElementsToWorkingNode,
-      this._returnElementsFromWorkingNode,
-    );
-
-    if (!item.inline) {
-      this.dispose = observe(item, '_isReady', this.updateLoadingVisibility, true);
-    }
-  }
-
-  componentWillUnmount() {
-    const { item } = this.props;
-
-    if (!item || !isAlive(item)) return;
-
-    this.dispose?.();
-    item.setLoaded(false);
-    item.setReady(false);
-  }
-
-  markObjectAsLoaded() {
-    const { item } = this.props;
-
-    if (!item || !isAlive(item)) return;
-
-    item.setLoaded(true);
-    this.updateLoadingVisibility();
-
-    // run in the next tick to have all the refs initialized
-    setTimeout(() => this._handleUpdate(true));
-  }
-
-  // no isReady observing in render
-  updateLoadingVisibility = () => {
-    const { item } = this.props;
-    const loadingEl = this.loadingRef.current;
-
-    if (!loadingEl) return;
-    if (item && isAlive(item) && item.isLoaded && item.isReady) {
-      loadingEl.setAttribute('style', 'display: none');
-    } else {
-      loadingEl.removeAttribute('style');
-    }
-  };
-
-  _passHotkeys = e => {
-    const props = 'key code keyCode location ctrlKey shiftKey altKey metaKey'.split(' ');
-    const init = {};
-
-    for (const prop of props) init[prop] = e[prop];
-
-    const internal = new KeyboardEvent(e.type, init);
-
-    document.dispatchEvent(internal);
-  };
-
-  onIFrameLoad = () => {
-    const { item } = this.props;
-    const iframe = item.visibleNodeRef.current;
-    const doc = iframe?.contentDocument;
-    const body = doc?.body;
-    const htmlEl = body?.parentElement;
-    const eventHandlers = {
-      click: [this._onRegionClick, true],
-      keydown: [this._passHotkeys, false],
-      keyup: [this._passHotkeys, false],
-      keypress: [this._passHotkeys, false],
-      mouseup: [this._onMouseUp, false],
-      mouseover: [this._onRegionMouseOver, true],
-    };
-
-    if (!body) return;
-
-    for (const event in eventHandlers) {
-      body.addEventListener(event, ...eventHandlers[event]);
-    }
-
-    // @todo remove this, project-specific
-    // fix unselectable links
-    const style = doc.createElement('style');
-
-    style.textContent = 'body a[href] { pointer-events: all; }';
-    doc.head.appendChild(style);
-
-    // // @todo make links selectable; dragstart supressing doesn't help — they are still draggable
-    // body.addEventListener("dragstart", e => {
-    //   e.stopPropagation();
-    //   e.preventDefault();
-    // });
-
-    // auto-height
-    if (body.scrollHeight) {
-      // body dimensions sometimes doesn't count some inner content offsets
-      // but html's offsetHeight sometimes is zero, so get the max of both
-      iframe.style.height = Math.max(body.scrollHeight, htmlEl.offsetHeight) + 'px';
-    }
-
-    this.markObjectAsLoaded();
-  };
-
-  render() {
-    const { item } = this.props;
-
-    if (!item._value) return null;
-
-    let val = item._value || '';
-    const newLineReplacement = '<br/>';
-    const settings = this.props.store.settings;
-    const isText = item.type === 'text';
-
-    if (isText) {
-      const cnLine = cn('richtext', { elem: 'line' });
-
-      val = htmlEscape(val)
-        .split(/\n|\r/g)
-        .map(s => `<span class="${cnLine}">${s}</span>`)
-        .join(newLineReplacement);
-    }
-
-    if (item.inline) {
-      const eventHandlers = {
-        onClickCapture: this._onRegionClick,
-        onMouseUp: this._onMouseUp,
-        onMouseOverCapture: this._onRegionMouseOver,
-      };
-
-      return (
-        <Block
-          name="richtext"
-          tag={ObjectTag}
-          item={item}
-        >
-          <Elem
-            key="root"
-            name="container"
-            ref={el => {
-              item.visibleNodeRef.current = el;
-              el && this.markObjectAsLoaded();
-            }}
-            data-linenumbers={isText && settings.showLineNumbers ? 'enabled' : 'disabled'}
-            className="htx-richtext"
-            dangerouslySetInnerHTML={{ __html: val }}
-            {...eventHandlers}
-          />
-          <Elem
-            key="orig"
-            name="orig-container"
-            ref={item.originalContentRef}
-            className="htx-richtext-orig"
-            dangerouslySetInnerHTML={{ __html: val }}
-          />
-          <Elem
-            key="work"
-            name="work-container"
-            ref={item.workingNodeRef}
-            className="htx-richtext-work"
-          />
-        </Block>
-      );
-    } else {
-      return (
-        <Block
-          name="richtext"
-          tag={ObjectTag}
-          item={item}
-        >
-          <Elem name="loading" ref={this.loadingRef}>
-            <LoadingOutlined />
-          </Elem>
-
-          <Elem
-            key="root"
-            name="iframe"
-            tag="iframe"
-            referrerPolicy="no-referrer"
-            sandbox="allow-same-origin allow-scripts"
-            ref={el => {
-              item.setReady(false);
-              item.visibleNodeRef.current = el;
-            }}
-            className="htx-richtext"
-            srcDoc={val}
-            onLoad={this.onIFrameLoad}
-          />
-          <Elem
-            key="orig"
-            name="orig-iframe"
-            tag="iframe"
-            referrerPolicy="no-referrer"
-            sandbox="allow-same-origin allow-scripts"
-            ref={item.originalContentRef}
-            className="htx-richtext-orig"
-            srcDoc={val}
-          />
-          <Elem
-            key="work"
-            name="work-iframe"
-            tag="iframe"
-            referrerPolicy="no-referrer"
-            sandbox="allow-same-origin allow-scripts"
-            ref={item.workingNodeRef}
-            className="htx-richtext-work"
-          />
-        </Block>
-      );
-    }
-  }
+type RegionDetailsMetaProps = {
+  region: any,
+  editMode?: boolean,
+  cancelEditMode?: () => void,
+  enterEditMode?: () => void,
 }
 
-const storeInjector = inject('store');
+export const RegionDetailsMeta: FC<RegionDetailsMetaProps> = observer(({
+  region,
+  editMode,
+  cancelEditMode,
+  enterEditMode,
+}) => {
+  const bem = useBEM();
+  const input = useRef<HTMLTextAreaElement | null>();
 
-const RPTV = storeInjector(observer(RichTextPieceView));
+  const saveMeta = (value: string) => {
+    region.setMetaInfo(value);
+    region.setNormInput(value);
+  };
 
-export const HtxRichText = ({ isText = false } = {}) => {
-  return storeInjector(observer(props => {
-    return <RPTV {...props} isText={isText} />;
-  }));
-};
+  useEffect(() => {
+    if (editMode && input.current) {
+      const { current } = input;
+
+      current.focus();
+      current.setSelectionRange(current.value.length, current.value.length);
+    }
+  }, [editMode]);
+
+        //{"id":17,"created_by":1,"action_type": "draft-created","created_at":"2021-05-26T13:03:43.335198Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":34,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}]},
+        //{"id":18,"created_by":1,"action_type": "updated","created_at":"2021-05-26T13:03:43.335198Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":34,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}]},
+        //{"id":19,"created_by":1,"action_type": "submitted", "created_at":"2021-05-26T13:03:49.330745Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":35,"previous_annotation_history":34,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"},{"id":"ALbgPwBdmj","type":"labels","value":{"end":2215,"text":"ale8) December 31, 2017Tr","start":2190,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        {"id":19,"created_by":1,"action_type": "submitted", "created_at":"2021-05-26T13:03:49.330745Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":35,"previous_annotation_history":34,"result":[{ "original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0 }, "id": "EPcQbFzM5K", "from_name": "bbox", "to_name": "image", "type": "rectangle", "origin": "manual" }, { "original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0, "labels": ["Handwriting"]}, "id": "EPcQbFzM5K", "from_name": "label", "to_name": "image", "type": "labels", "origin": "manual"},{"original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0, "text": ["hello world"]}, "id": "EPcQbFzM5K", "from_name": "transcription", "to_name": "image", "type": "textarea", "origin": "manual"}]},
+      ]
+      domReady(function () {
+        var ls = new LabelStudio("label-studio", {
+          description: "Description",
+          interfaces: [
+              "panel",
+              "update",
+              "submit",
+              "skip",
+              "controls",
+              //"review",
+              "infobar",
+              "topbar",
+              "instruction",
+              "side-column",
+              "ground-truth",
+              "annotations:tabs",
+              "annotations:menu",
+              "annotations:current",
+              "annotations:add-new",
+              "annotations:delete",
+              'annotations:view-all',
+              "predictions:tabs",
+              "predictions:menu",
+              "auto-annotation",
+              "edit-history",
+              //"topbar:prevnext",
+          ],
+          user: {
+            "id": 1,
+            "first_name": "Nick",
+            "last_name": "Skriabin",
+            "username": "nick",
+            "email": "nick@heartex.ai",
+            "avatar": null,
+            "initials": "ni",
+          },
+          users: [
+            {
+              "id": 1,
+              "first_name": "Nick",
+              "last_name": "Skriabin",
+              "username": "nick",
+              "email": "nick@heartex.ai",
+              "avatar": null,
+              "initials": "ni",
+            }
+          ],
+          task: {
+            annotations: [],
+            predictions: [],
+            id: 1,
+            data: {
+              image: "https://htx-misc.s3.amazonaws.com/opensource/label-studio/examples/images/nick-owuor-astro-nic-visuals-wDifg5xc9Z4-unsplash.jpg"
+            }
+          },
+          history: annotationHistory,
+        });
+
+
+        ls.on("storageInitialized", (store) => {
+          ls.on("selectAnnotation", (next) => {
+            if (next.type === 'annotation') {
+              store.setHistory(annotationHistory)
+            }
+          })
+
+          ls.on("regionFinishedDrawing", (region, list) => {
+            console.log("finish drawing", {region, list})
+          })
+        })
+      });
+    </script>
+  </body>
+</html>

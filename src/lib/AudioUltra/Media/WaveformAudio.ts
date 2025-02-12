@@ -1,227 +1,220 @@
-import { Events } from '../Common/Events';
-import { __DEBUG__ } from '../Common/Utils';
-import { audioDecoderPool } from './AudioDecoderPool';
-import { BaseAudioDecoder, DEFAULT_FREQUENCY_HZ } from './BaseAudioDecoder';
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="//fonts.googleapis.com/css2?family=Roboto:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&display=swap" rel="stylesheet">
+    <link href="//fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="theme-color" content="#000000">
+    <!--
+      Notice the use of %PUBLIC_URL% in the tags above.
+      It will be replaced with the URL of the `public` folder during the build.
+      Only files inside the `public` folder can be referenced from the HTML.
 
-export interface WaveformAudioOptions {
-  src?: string;
-  volume?: number;
-  muted?: boolean;
-  rate?: number;
-  splitChannels?: boolean;
-  decoderType?: 'ffmpeg' | 'webaudio';
+      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
+      work correctly both with client-side routing and a non-root public URL.
+      Learn how to configure a non-root public URL by running `npm run build`.
+
+      I think according to new design we should record not only update of result in annotation but review rejection/acceptance too, because in current way we can't show action range in the history, only result updating.
+
+      In current functionality we create history record if we pass a result field. It doesn't let make a comment on review. Because we decided to relate comments to history.
+      -->
+    <link rel="stylesheet" href="/styles/main.css">
+    <title>LSF</title>
+  </head>
+  <body>
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
+
+    <div id="header">
+      <a id="logo" href="/">
+        <img src="/images/ls_logo.svg" alt="label studio logo">
+      </a>
+      <ul id="nav">
+        <li><a href="https://labelstud.io/guide">Docs</a></li>
+        <li><a class="github-button" href="https://github.com/heartexlabs/label-studio"
+           data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star heartexlabs/label-studio on GitHub"><img src="./images/GitHub-Mark-64px.png" height="25" /></a></li>
+      </ul>
+    </div>
+
+    <div id="ls-container">
+      <div id="label-studio"></div>
+    </div>
+    <footer class="footer">
+      <span>
+        Made with <img src="/images/3nowhite.svg" height="16" /> by <a target="_blank" href="https://heartex.net">Heartex</a> in San Francisco
+      </span>
+    </footer>
+
+    <script>
+      (function (d, o) {
+          d.domReady = function (n, a) {
+              o.addEventListener && o.addEventListener("DOMContentLoaded", function e(t) {
+                  o.removeEventListener("DOMContentLoaded", e), n.call(a || d, t)
+              }) || o.attachEvent && o.attachEvent("onreadystatechange", function e(t) {
+                  "complete" === o.readyState && (o.detachEvent("onreadystatechange", e), n.call(a || d, t))
+              })
+          }
+      })(window, document);
+    </script>
+    <style>
+      body {
+        height: 100vh;
+      }
+
+      #label-studio {
+        height: calc(100vh - 88px);
+      }
+    </style>
+    <script>
+      const annotationHistory = [
+        //{"id":14,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "accepted","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        //{"id":15,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "updated","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        //{"id":16,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "rejected","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+
+
+  return content ? (
+    <Block name="region-meta">
+      {content}
+    </Block>
+  ) : null;
+});
+
+export const RegionDetailsMain: FC<{region: any}> = observer(({
+  region,
+}) => {
+  return (
+    <>
+      <Elem name="result">
+        {(region?.results as any[]).map((res) => <ResultItem key={res.pid} result={res}/>)}
+        {region?.text ? (
+          <Block name="region-meta">
+            <Elem name="item">
+              <Elem
+                name="content"
+                mod={{ type: 'text' }}
+                dangerouslySetInnerHTML={{
+                  __html: region.text.replace(/\\n/g, '\n'),
+                }}
+              />
+            </Elem>
+          </Block>
+        ) : null}
+      </Elem>
+      <RegionEditor region={region}/>
+    </>
+  );
+});
+
+type RegionDetailsMetaProps = {
+  region: any,
+  editMode?: boolean,
+  cancelEditMode?: () => void,
+  enterEditMode?: () => void,
 }
 
-interface WaveformAudioEvents {
-  decodingProgress: (chunk: number, total: number) => void;
-  canplay: () => void;
-}
+export const RegionDetailsMeta: FC<RegionDetailsMetaProps> = observer(({
+  region,
+  editMode,
+  cancelEditMode,
+  enterEditMode,
+}) => {
+  const bem = useBEM();
+  const input = useRef<HTMLTextAreaElement | null>();
 
-export class WaveformAudio extends Events<WaveformAudioEvents> {
-  decoder?: BaseAudioDecoder;
-  decoderPromise?: Promise<void>;
-  mediaPromise?: Promise<void>;
-  mediaReject?: (err: any) => void;
-  el?: HTMLAudioElement;
-
-  // private backed by audio element and getters/setters
-  // underscored to keep the public API clean
-  private _rate = 1;
-  private _volume = 1;
-  private _savedVolume = 1;
-  private splitChannels = false;
-  private decoderType: 'ffmpeg' | 'webaudio' = 'ffmpeg';
-  private src?: string;
-  private mediaResolve?: () => void;
-
-  constructor(options: WaveformAudioOptions) {
-    super();
-    this._rate = options.rate ?? this._rate;
-    this._savedVolume = options.volume ?? this._volume;
-    this._volume = options.muted ? 0 : this._savedVolume;
-    this.splitChannels = options.splitChannels ?? false;
-    this.decoderType = options.decoderType ?? this.decoderType;
-    this.src = options.src;
-    this.createAudioDecoder();
-    this.createMediaElement();
-  }
-
-  get channelCount() {
-    return this.decoder?.channelCount || 1;
-  }
-
-  get duration() {
-    return this.el?.duration ?? 0;
-  }
-
-  get sampleRate() {
-    return this.decoder?.sampleRate || DEFAULT_FREQUENCY_HZ;
-  }
-
-  get dataLength() {
-    return this.decoder?.dataLength || 0;
-  }
-
-  get dataSize() {
-    return this.decoder?.dataSize || 0;
-  }
-
-  get volume() {
-    return this._volume ?? 1;
-  }
-
-  set volume(value: number) {
-    this._volume = value;
-
-    if (this.el) {
-      this.el.volume = value;
-    }
-  }
-
-  get speed() {
-    return this._rate ?? 1;
-  }
-
-  set speed(value: number) {
-    this._rate = value;
-
-    if (this.el) {
-      this.el.playbackRate = this._rate;
-    }
-  }
-
-  get muted() {
-    return this.volume === 0;
-  }
-
-  disconnect() {
-    try {
-      if (this.el && !this.el.paused) {
-        this.el.pause();
-      }
-    } catch {
-      // ignore
-    }
-    this.decoder?.cancel();
-  }
-  
-  destroy() {
-    super.destroy();
-    this.disconnect();
-
-    delete this.mediaResolve;
-    delete this.mediaReject;
-    delete this.mediaPromise;
-    delete this.decoderPromise;
-    this.decoder?.destroy();
-    delete this.decoder;
-    this.el?.removeEventListener('error', this.mediaReady);
-    this.el?.removeEventListener('canplaythrough', this.mediaReady);
-    this.el?.remove();
-    delete this.el;
-  }
-
-  mute() {
-    this._savedVolume = this.volume || 1;
-    this.volume = 0;
-    if (this.el) {
-      this.el.muted = true;
-    }
-  }
-
-  unmute() {
-    this.volume = this._savedVolume || 1; // 1 is the default volume, if manually muted this will be 0 and we want to restore to 1
-    if (this.el) {
-      this.el.muted = false;
-    }
-  }
-
-  get chunks(): Float32Array[][]|undefined {
-    if (!this.decoder) return;
-
-    return this.decoder.chunks;
-  }
-
-  async sourceDecoded() {
-    if (!this.decoder) return false;
-    try {
-      if (this.mediaPromise) {
-        await this.mediaPromise;
-      }
-      if (this.decoderPromise) {
-        await this.decoderPromise;
-      }
-
-      return this.decoder.sourceDecoded;
-    } catch (e) {
-      console.error(e);
-      return false;
-    }
-  }
-
-  async initDecoder(arraybuffer?: ArrayBuffer) {
-    if (!this.decoder) return;
-
-    if (!this.decoderPromise && arraybuffer) {
-      this.decoderPromise = this.decoder.init(arraybuffer);
-    }
-
-    return this.decoderPromise;
-  }
-
-  async decodeAudioData(options?: {multiChannel?: boolean}) {
-    if (!this.decoder) return;
-
-    return this.decoder.decode(options);
-  }
-
-  private createMediaElement() {
-    if (!this.src || this.el) return;
-
-    this.el = document.createElement('audio');
-    this.el.preload = 'auto';
-    this.el.setAttribute('data-testid', 'waveform-audio');
-    this.el.style.display = 'none';
-    document.body.appendChild(this.el);
-
-    this.mediaPromise = new Promise((resolve, reject) => {
-      this.mediaResolve = resolve;
-      this.mediaReject = reject;
-    });
-
-    this.el.addEventListener('canplaythrough', this.mediaReady);
-    this.el.addEventListener('error', this.mediaReady);
-    this.loadMedia();
-  }
-
-  mediaReady = async (e: any) => {
-    if (e.type === 'error') {
-      this.mediaReject?.(this.el?.error);
-    } else {
-      if (this.mediaResolve) {
-        this.mediaResolve?.();
-        this.mediaResolve = undefined;
-      }
-      this.invoke('canplay');
-    }
+  const saveMeta = (value: string) => {
+    region.setMetaInfo(value);
+    region.setNormInput(value);
   };
 
-  /**
-   * Load the media element with the audio source and begin an initial playback buffer
-   */
-  private loadMedia() {
-    if (!this.src || !this.el) return;
-    
-    this.el.src = this.src;
-  }
+  useEffect(() => {
+    if (editMode && input.current) {
+      const { current } = input;
 
-  private createAudioDecoder() {
-    if (!this.src || this.decoder) return;
+      current.focus();
+      current.setSelectionRange(current.value.length, current.value.length);
+    }
+  }, [editMode]);
 
-    this.decoder = audioDecoderPool.getDecoder(this.src, this.splitChannels, this.decoderType);
+        //{"id":17,"created_by":1,"action_type": "draft-created","created_at":"2021-05-26T13:03:43.335198Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":34,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}]},
+        //{"id":18,"created_by":1,"action_type": "updated","created_at":"2021-05-26T13:03:43.335198Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":34,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}]},
+        //{"id":19,"created_by":1,"action_type": "submitted", "created_at":"2021-05-26T13:03:49.330745Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":35,"previous_annotation_history":34,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"},{"id":"ALbgPwBdmj","type":"labels","value":{"end":2215,"text":"ale8) December 31, 2017Tr","start":2190,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        {"id":19,"created_by":1,"action_type": "submitted", "created_at":"2021-05-26T13:03:49.330745Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":35,"previous_annotation_history":34,"result":[{ "original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0 }, "id": "EPcQbFzM5K", "from_name": "bbox", "to_name": "image", "type": "rectangle", "origin": "manual" }, { "original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0, "labels": ["Handwriting"]}, "id": "EPcQbFzM5K", "from_name": "label", "to_name": "image", "type": "labels", "origin": "manual"},{"original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0, "text": ["hello world"]}, "id": "EPcQbFzM5K", "from_name": "transcription", "to_name": "image", "type": "textarea", "origin": "manual"}]},
+      ]
+      domReady(function () {
+        var ls = new LabelStudio("label-studio", {
+          description: "Description",
+          interfaces: [
+              "panel",
+              "update",
+              "submit",
+              "skip",
+              "controls",
+              //"review",
+              "infobar",
+              "topbar",
+              "instruction",
+              "side-column",
+              "ground-truth",
+              "annotations:tabs",
+              "annotations:menu",
+              "annotations:current",
+              "annotations:add-new",
+              "annotations:delete",
+              'annotations:view-all',
+              "predictions:tabs",
+              "predictions:menu",
+              "auto-annotation",
+              "edit-history",
+              //"topbar:prevnext",
+          ],
+          user: {
+            "id": 1,
+            "first_name": "Nick",
+            "last_name": "Skriabin",
+            "username": "nick",
+            "email": "nick@heartex.ai",
+            "avatar": null,
+            "initials": "ni",
+          },
+          users: [
+            {
+              "id": 1,
+              "first_name": "Nick",
+              "last_name": "Skriabin",
+              "username": "nick",
+              "email": "nick@heartex.ai",
+              "avatar": null,
+              "initials": "ni",
+            }
+          ],
+          task: {
+            annotations: [],
+            predictions: [],
+            id: 1,
+            data: {
+              image: "https://htx-misc.s3.amazonaws.com/opensource/label-studio/examples/images/nick-owuor-astro-nic-visuals-wDifg5xc9Z4-unsplash.jpg"
+            }
+          },
+          history: annotationHistory,
+        });
 
-    this.decoder.on('progress', (chunk, total) => {
-      this.invoke('decodingProgress', [chunk, total]);
-    });
-  }
-}
+
+        ls.on("storageInitialized", (store) => {
+          ls.on("selectAnnotation", (next) => {
+            if (next.type === 'annotation') {
+              store.setHistory(annotationHistory)
+            }
+          })
+
+          ls.on("regionFinishedDrawing", (region, list) => {
+            console.log("finish drawing", {region, list})
+          })
+        })
+      });
+    </script>
+  </body>
+</html>
