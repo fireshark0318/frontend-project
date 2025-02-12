@@ -1,716 +1,155 @@
-import { clamp, isDefined } from "./utilities";
-
-const isTextNode = node => node && node.nodeType === Node.TEXT_NODE;
-
-const isText = text => text && /[\w']/i.test(text);
-const isSpace = text => text && /[\s\t]/i.test(text);
-
-const destructSelection = selection => {
-  const range = selection.getRangeAt(0);
-  const { startOffset, startContainer, endOffset, endContainer } = range;
-
-  const firstSymbol = startContainer.textContent[startOffset];
-  const prevSymbol = startContainer.textContent[startOffset - 1];
-  const lastSymbol = endContainer.textContent[endOffset - 1];
-  const nextSymbol = endContainer.textContent[endOffset];
-
-  return {
-    selection,
-    range,
-    startOffset,
-    startContainer,
-    endOffset,
-    endContainer,
-    firstSymbol,
-    prevSymbol,
-    lastSymbol,
-    nextSymbol,
-  };
-};
-
-const trimSelectionLeft = (selection) => {
-  const resultRange = selection.getRangeAt(0);
-
-  selection.removeAllRanges();
-  selection.collapse(resultRange.startContainer, resultRange.startOffset);
-  let currentRange = selection.getRangeAt(0);
-
-  do {
-    selection.collapse(currentRange.endContainer, currentRange.endOffset);
-    selection.modify("extend", "forward", "character");
-    currentRange = selection.getRangeAt(0);
-  } while (!isTextNode(currentRange.startContainer) || isSpace(currentRange.startContainer.textContent[currentRange.startOffset]));
-  resultRange.setStart(currentRange.startContainer, currentRange.startOffset);
-  selection.removeAllRanges();
-  selection.addRange(resultRange);
-};
-const trimSelectionRight = (selection) => {
-  const resultRange = selection.getRangeAt(0);
-
-  selection.removeAllRanges();
-  selection.collapse(resultRange.endContainer, resultRange.endOffset);
-  let currentRange = selection.getRangeAt(0);
-
-  do {
-    selection.collapse(currentRange.startContainer, currentRange.startOffset);
-    selection.modify("extend", "backward", "character");
-    currentRange = selection.getRangeAt(0);
-  } while (!isTextNode(currentRange.startContainer) || isSpace(currentRange.startContainer.textContent[currentRange.startOffset]));
-  resultRange.setEnd(currentRange.endContainer, currentRange.endOffset);
-  selection.removeAllRanges();
-  selection.addRange(resultRange);
-};
-const trimSelection = (selection) => {
-  trimSelectionLeft(selection);
-  trimSelectionRight(selection);
-};
-
-/**
- *
- * @param {Selection} selection
- */
-const findBoundarySelection = (selection, boundary) => {
-  const {
-    range: originalRange,
-    startOffset,
-    startContainer,
-    endOffset,
-    endContainer,
-  } = destructSelection(selection);
-
-  const resultRange = {};
-  let currentRange;
-
-  // It's easier to operate the selection when it's collapsed
-  selection.collapse(endContainer, endOffset);
-  // Looking for maximum displacement
-  while (selection.getRangeAt(0).compareBoundaryPoints(Range.START_TO_START, originalRange)===1) {
-    selection.modify("move", "backward", boundary);
-  }
-  // Going back to find minimum displacement
-  while (selection.getRangeAt(0).compareBoundaryPoints(Range.START_TO_START, originalRange)<1) {
-    currentRange = selection.getRangeAt(0);
-    Object.assign(resultRange, {
-      startContainer: currentRange.startContainer,
-      startOffset: currentRange.startOffset,
-    });
-    selection.modify("move", "forward", boundary);
-  }
-
-  selection.collapse(startContainer, startOffset);
-  while (selection.getRangeAt(0).compareBoundaryPoints(Range.END_TO_END, originalRange)===-1) {
-    selection.modify("move", "forward", boundary);
-  }
-  while (selection.getRangeAt(0).compareBoundaryPoints(Range.END_TO_END, originalRange)>-1) {
-    currentRange = selection.getRangeAt(0);
-    Object.assign(resultRange, {
-      endContainer: currentRange.endContainer,
-      endOffset: currentRange.endOffset,
-    });
-    selection.modify("move", "backward", boundary);
-  }
-
-  selection.removeAllRanges();
-  const range = new Range();
-
-  range.setStart(resultRange.startContainer, resultRange.startOffset);
-  range.setEnd(resultRange.endContainer, resultRange.endOffset);
-  selection.addRange(range);
-  trimSelection(selection);
-  return selection;
-};
-
-const closestBoundarySelection = (selection, boundary) => {
-  const {
-    range: originalRange,
-    startOffset,
-    startContainer,
-    endOffset,
-    endContainer,
-  } = destructSelection(selection);
-
-  const resultRange = {};
-  let currentRange;
-
-  // It's easier to operate the selection when it's collapsed
-  selection.collapse(startContainer, startOffset);
-  selection.modify("move", "forward", "character");
-  selection.modify("move", "backward", boundary);
-  if (selection.getRangeAt(0).compareBoundaryPoints(Range.START_TO_START, originalRange)===1) {
-    selection.collapse(startContainer, startOffset);
-    selection.modify("move", "backward", boundary);
-  }
-  currentRange = selection.getRangeAt(0);
-  Object.assign(resultRange, {
-    startContainer: currentRange.startContainer,
-    startOffset: currentRange.startOffset,
-  });
-
-  selection.collapse(endContainer, endOffset);
-  selection.modify("move", "backward", "character");
-  selection.modify("move", "forward", boundary);
-  if (selection.getRangeAt(0).compareBoundaryPoints(Range.START_TO_START, originalRange)===-1) {
-    selection.collapse(endContainer, endOffset);
-    selection.modify("move", "forward", boundary);
-  }
-  currentRange = selection.getRangeAt(0);
-  Object.assign(resultRange, {
-    endContainer: currentRange.endContainer,
-    endOffset: currentRange.endOffset,
-  });
-
-  selection.removeAllRanges();
-  const range = new Range();
-
-  range.setStart(resultRange.startContainer, resultRange.startOffset);
-  range.setEnd(resultRange.endContainer, resultRange.endOffset);
-  selection.addRange(range);
-
-  return selection;
-};
-
-const boundarySelection = (selection, boundary) => {
-  const wordBoundary = boundary !== "symbol";
-  const {
-    startOffset,
-    startContainer,
-    endOffset,
-    endContainer,
-    firstSymbol,
-    prevSymbol,
-    lastSymbol,
-    nextSymbol,
-  } = destructSelection(selection);
-
-  if (wordBoundary) {
-    if (boundary.endsWith("boundary")) {
-      closestBoundarySelection(selection, boundary);
-    } else {
-      findBoundarySelection(selection, boundary);
-    }
-  } else {
-    if (!isText(firstSymbol) || isText(prevSymbol)) {
-      const newRange = selection.getRangeAt(0);
-
-      newRange.setEnd(startContainer, startOffset);
-      selection.modify("move", "backward", boundary);
-    }
-
-    if (!isText(lastSymbol) || isText(nextSymbol)) {
-      const newRange = selection.getRangeAt(0);
-
-      newRange.setEnd(endContainer, endOffset);
-      selection.modify("extend", "forward", boundary);
-    }
-  }
-};
-
-/**
- * Captures current selection
- * @param {(response: {selectionText: string, range: Range}) => void} callback
- */
-export const captureSelection = (
-  callback,
-  { granularity, beforeCleanup, window } = {
-    granularity: "symbol",
-  },
-) => {
-  const selection = window.getSelection();
-
-  if (selection.isCollapsed) return;
-  if (granularity !== "symbol") {
-    trimSelection(selection);
-  }
-  const selectionText = selection.toString().replace(/[\n\r]/g, "\\n");
-
-  if (selection.isCollapsed) return;
-
-  applyTextGranularity(selection, granularity);
-
-  for (let i = 0; i < selection.rangeCount; i++) {
-    const range = fixRange(selection.getRangeAt(i));
-
-    callback({ selectionText, range });
-  }
-
-  // eslint-disable-next-line no-unused-expressions
-  beforeCleanup?.();
-
-  selection.removeAllRanges();
-};
-
-/**
- * *Experimental feature. Might nor work in Gecko browsers.*
- *
- * Updates selection's granularity.
- * @param {Selection} selection
- * @param {string} granularity
- */
-const applyTextGranularity = (selection, granularity) => {
-  if (!selection.modify || !granularity || granularity === "symbol") return;
-
-  try {
-    switch (granularity) {
-      case "word":
-        boundarySelection(selection, "word");
-        return;
-      case "sentence":
-        boundarySelection(selection, "sentenceboundary");
-        return;
-      case "paragraph":
-        boundarySelection(selection, "paragraphboundary");
-        return;
-      case "charater":
-      case "symbol":
-      default:
-        return;
-    }
-  } catch {
-    console.warn("Probably, you're using browser that doesn't support granularity.");
-  }
-};
-
-/**
- * Lookup closest text node
- * @param {HTMLElement} commonContainer
- * @param {HTMLElement} node
- * @param {number} offset
- */
-const textNodeLookup = (commonContainer, node, offset, direction) => {
-  const startNode = node === commonContainer ? node.childNodes[offset] : node;
-
-  if (isTextNode(startNode)) return startNode;
-
-  const walker = commonContainer.ownerDocument.createTreeWalker(commonContainer, NodeFilter.SHOW_ALL);
-  let currentNode = walker.nextNode();
-  let lastTextNode;
-
-  while (currentNode && currentNode !== startNode) {
-    if (isTextNode(currentNode)) lastTextNode = currentNode;
-    currentNode = walker.nextNode();
-  }
-
-  if (currentNode && direction === "backward") return lastTextNode;
-
-  while (currentNode) {
-    if (isTextNode(currentNode)) return currentNode;
-    currentNode = walker.nextNode();
-  }
-};
-
-/**
- * Fix range if it contains non-text nodes
- * @param {Range} range
- */
-const fixRange = range => {
-  const { startOffset, endOffset, commonAncestorContainer: commonContainer } = range;
-  let { startContainer, endContainer } = range;
-
-  if (!isTextNode(startContainer)) {
-    startContainer = textNodeLookup(commonContainer, startContainer, startOffset, "forward");
-    if (!startContainer) return null;
-    range.setStart(startContainer, 0);
-  }
-
-  if (!isTextNode(endContainer)) {
-    endContainer = textNodeLookup(commonContainer, endContainer, endOffset, "backward");
-    if (!endContainer) return null;
-    const isIncluded = !!range.toString().match(endContainer.wholeText)?.length;
-
-    range.setEnd(endContainer, isIncluded ? endContainer.length : 0);
-  }
-
-  return range;
-};
-
-/**
- * Highlight gien Range
- * @param {Range} range
- * @param {{label: string, classNames: string[]}} param1
- */
-export const highlightRange = (range, { label, classNames }) => {
-  const { startContainer, endContainer, commonAncestorContainer } = range;
-  const { startOffset, endOffset } = range;
-  const highlights = [];
-
-  /**
-   * Wrapper with predefined classNames and cssStyles
-   * @param  {[Node, number, number]} args
-   */
-  const applyStyledHighlight = (...args) => highlightRangePart(...args, classNames);
-
-  // If start and end nodes are equal, we don't need
-  // to perform any additional work, just highlighting as is
-  if (startContainer === endContainer) {
-    highlights.push(applyStyledHighlight(startContainer, startOffset, endOffset));
-  } else {
-    // When start and end are different we need to find all
-    // nodes between as they could contain text nodes
-    const nodesToHighlight = findNodesBetween(startContainer, endContainer, commonAncestorContainer);
-
-    // All nodes between start and end should be fully highlighted
-    nodesToHighlight.forEach(node => {
-      let start = startOffset;
-      let end = endOffset;
-
-      if (node !== startContainer) start = 0;
-      if (node !== endContainer) end = node.length;
-
-      highlights.push(applyStyledHighlight(node, start, end));
-    });
-  }
-
-  const lastLabel = highlights[highlights.length - 1];
-
-  if (lastLabel) lastLabel.setAttribute("data-label", label ?? "");
-
-  return highlights;
-};
-
-/**
- * Takes original range and splits it into multiple text
- * nodes highlighting a part of the text, then replaces
- * original text node with highlighted one
- * @param {Node} container
- * @param {number} startOffset
- * @param {number} endOffset
- * @param {object} cssStyles
- * @param {string[]} classNames
- */
-export const highlightRangePart = (container, startOffset, endOffset, classNames) => {
-  let spanHighlight;
-  const text = container.textContent;
-  const parent = container.parentNode;
-
-  /**
-   * In case we're inside another region, move the selection outside
-   * to maintain proper nesting of highlight nodes
-   */
-  if (startOffset === 0 && container.length === endOffset && parent.classList.contains(classNames[0])) {
-    const placeholder = container.ownerDocument.createElement("span");
-    const parentNode = parent.parentNode;
-
-    parentNode.replaceChild(placeholder, parent);
-    spanHighlight = wrapWithSpan(parent, classNames);
-    parentNode.replaceChild(spanHighlight, placeholder);
-  } else {
-    // Extract text content that matches offsets
-    const content = text.substring(startOffset, endOffset);
-    // Create text node that will be highlighted
-    const highlitedNode = container.ownerDocument.createTextNode(content);
-
-    // Split the container in three parts
-    const noseNode = container.cloneNode();
-    const tailNode = container.cloneNode();
-
-    // Add all the text BEFORE selection
-    noseNode.textContent = text.substring(0, startOffset);
-    tailNode.textContent = text.substring(endOffset, text.length);
-
-    // To avoid weird dom mutation we assemble replacement
-    // beforehands, it allows to replace original node
-    // directly without extra work
-    const textFragment = container.ownerDocument.createDocumentFragment();
-
-    spanHighlight = wrapWithSpan(highlitedNode, classNames);
-
-    if (noseNode.length) textFragment.appendChild(noseNode);
-    textFragment.appendChild(spanHighlight);
-    if (tailNode.length) textFragment.appendChild(tailNode);
-
-    // At this point we have three nodes in the tree
-    // one of them is our selected range
-    parent.replaceChild(textFragment, container);
-  }
-
-  return spanHighlight;
-};
-
-/**
- * Wrap text node with stylized span
- * @param {Text} node
- * @param {string[]} classNames
- * @param {object} cssStyles
- * @param {string} [label]
- */
-export const wrapWithSpan = (node, classNames, label) => {
-  const highlight = node.ownerDocument.createElement("span");
-
-  highlight.appendChild(node);
-
-  applySpanStyles(highlight, { classNames, label });
-
-  return highlight;
-};
-
-/**
- * Apply classes and styles to a span. Optionally add or remove label
- * @param {HTMLSpanElement} spanNode
- * @param {{classNames?: string[], cssStyles?: {}, label?: string}} param1
- */
-export const applySpanStyles = (spanNode, { classNames, label }) => {
-  if (classNames) {
-    spanNode.className = "";
-    spanNode.classList.add(...classNames);
-  }
-
-  // label is array, string or null, so check for length
-  if (!label?.length) spanNode.removeAttribute("data-label");
-  else spanNode.setAttribute("data-label", label);
-};
-
-/**
- * Look up all nodes between given `startNode` and `endNode` including ends
- * @param {Node} startNode
- * @param {Node} endNode
- * @param {Node} root
- */
-export const findNodesBetween = (startNode, endNode, root) => {
-  // Tree walker creates flat representation of DOM
-  // it allows to iterate over nodes more efficiently
-  // as we don't need to go up and down on a tree
-
-  // Also we iterate over Text nodes only natively. That's
-  // the only type of nodes we need to highlight.
-  // No additional checks, long live TreeWalker :)
-  const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_ALL);
-
-  // Flag indicates that we're somwhere between `startNode` and `endNode`
-  let inRange = false;
-
-  // Here we collect all nodes between start and end
-  // including ends
-  const nodes = [];
-  let { currentNode } = walker;
-
-  while (currentNode) {
-    if (currentNode === startNode) inRange = true;
-    if (inRange && currentNode.nodeType === Node.TEXT_NODE) nodes.push(currentNode);
-    if (inRange && currentNode === endNode) break;
-    currentNode = walker.nextNode();
-  }
-
-  return nodes;
-};
-
-/**
- * Removes given range and restores DOM structure.
- * @param {HTMLSpanElement[]} spans
- */
-export const removeRange = spans => {
-  if (!spans) return;
-  spans.forEach(hl => {
-    const fragment = hl.ownerDocument.createDocumentFragment();
-    const parent = hl.parentNode;
-
-    // Fill replacement fragment
-    // We need to copy childNodes because otherwise
-    // It will be changed during the loop
-    Array.from(hl.childNodes).forEach(node => {
-      node.remove();
-      fragment.appendChild(node);
-    });
-
-    // Put back all text without spans
-    parent.replaceChild(fragment, hl);
-
-    // Join back all text nodes
-    Array.from(parent.childNodes).forEach(node => {
-      const prev = node.previousSibling;
-
-      if (!isTextNode(prev) || !isTextNode(node)) return;
-
-      prev.data += node.data;
-      node.remove();
-    });
-  });
-};
-
-/**
- * Find a startContainer and endContainer by text offsets
- * @param {number} start
- * @param {number} end
- * @param {Node} root
- */
-export const findRange = (start, end, root) => {
-  return {
-    startContainer: codePointsToChars(findOnPosition(root, start, "right")),
-    endContainer: codePointsToChars(findOnPosition(root, end, "left")),
-  };
-};
-
-export const findRangeNative = (start, end, root) => {
-  const { startContainer, endContainer } = findRange(start, end, root);
-
-  const range = (root.contentDocument ?? root.ownerDocument).createRange();
-
-  if (!startContainer || !endContainer) return;
-
-  range.setStart(startContainer.node, startContainer.position);
-  range.setEnd(endContainer.node, endContainer.position);
-
-  return range;
-};
-
-/**
- * Convert position in node from code points count to chars count
- * May be useful to do some string operations and then convert it back
- * @param {{ node: Node, position: number }} container
- * @return {{ node: Node, position: number }}
- */
-export const codePointsToChars = ({ node, position } = {}) => {
-  if (!node) return;
-
-  const codePoints = [...node.textContent].slice(0, position);
-  const chars = codePoints.join("").length;
-
-  return { node, position: chars };
-};
-
-/**
- * Fix position in node from chars count to code points count
- * In python and other modern tools complex unicode symbols handled as code points, not UTF chars
- * So for external usage js length should be converted to code points count
- * string to array conversion splits string into code points array, that's the easiest way
- * @param {{ node: Node, position: number }} container
- * @return {{ node: Node, position: number }}
- */
-export const charsToCodePoints = ({ node, position }) => {
-  const chars = node.textContent.substr(0, position);
-  const codePoints = [...chars].length;
-
-  return { node, position: codePoints };
-};
-
-/**
- * Fix Range start/end offsets to code points count instead of chars count
- * Alters given range
- * @param {Range} range
- * @return {Range} the same range
- */
-export const fixCodePointsInRange = (range) => {
-  const start = charsToCodePoints({ node: range.startContainer, position: range.startOffset });
-  const end = charsToCodePoints({ node: range.endContainer, position: range.endOffset });
-
-  range.setStart(range.startContainer, start.position);
-  range.setEnd(range.endContainer, end.position);
-
-  return range;
-};
-
-/**
- * Find a node by text offset
- * @param {Node} root
- * @param {number} position
- */
-export const findOnPosition = (root, position, borderSide = "left") => {
-  const walker = (root.contentDocument ?? root.ownerDocument).createTreeWalker(root, NodeFilter.SHOW_ALL);
-
-  let lastPosition = 0;
-  let currentNode = walker.nextNode();
-  let nextNode = walker.nextNode();
-  // set to finish on the next text
-  let finishHere = false;
-
-  while (currentNode) {
-    const isText = currentNode.nodeType === Node.TEXT_NODE;
-    const isBR = currentNode.nodeName === "BR";
-
-    if (isBR) {
-      lastPosition++;
-    }
-
-    if (isText && finishHere) {
-      return { node: currentNode, position: 0 };
-    }
-
-    if (isText) {
-      // convert chars count to code points count, see `charsToCodePoints`
-      const length = [...currentNode.textContent].length;
-
-      if (length + lastPosition >= position || !nextNode) {
-        if (borderSide === "right" && length + lastPosition === position && nextNode) {
-          finishHere = true;
-        } else {
-          return { node: currentNode, position: isBR ? 0 : clamp(position - lastPosition, 0, length) };
-        }
-      }
-      lastPosition += length;
-    }
-
-    currentNode = nextNode;
-    nextNode = walker.nextNode();
-  }
-};
-
-/**
- * Convert Range to global offsets relative to a root
- * @param {Range} range
- * @param {Node} root
- */
-export const rangeToGlobalOffset = (range, root) => {
-  const globalOffsets = [
-    findGlobalOffset(range.startContainer, range.startOffset, root),
-    findGlobalOffset(range.endContainer, range.endOffset, root),
-  ];
-
-  return globalOffsets;
-};
-
-/**
- * Find text offset for given node and position relative to a root
- * @param {Node} node
- * @param {Number} position
- * @param {Node} root
- */
-const findGlobalOffset = (node, position, root) => {
-  const walker = (root.contentDocument ?? root.ownerDocument).createTreeWalker(root, NodeFilter.SHOW_ALL);
-
-  let globalPosition = 0;
-  let nodeReached = false;
-  let currentNode = walker.nextNode();
-
-  while(currentNode) {
-    // Indicates that we at or below desired node
-    nodeReached = nodeReached || (node === currentNode);
-    const atTargetNode = node === currentNode || currentNode.contains(node);
-    const isText = currentNode.nodeType === Node.TEXT_NODE;
-    const isBR = currentNode.nodeName === "BR";
-
-    // Stop iteration
-    // Break if we passed target node and current node
-    // is not target, nor child of a target
-    if (nodeReached && atTargetNode === false) {
-      break;
-    }
-
-    if (isText || isBR) {
-      let length = isDefined(currentNode.length) ? [...currentNode.textContent].length : 1;
-
-      if (atTargetNode) {
-        length = Math.min(position, length);
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="//fonts.googleapis.com/css2?family=Roboto:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&display=swap" rel="stylesheet">
+    <link href="//fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="theme-color" content="#000000">
+    <!--
+      Notice the use of %PUBLIC_URL% in the tags above.
+      It will be replaced with the URL of the `public` folder during the build.
+      Only files inside the `public` folder can be referenced from the HTML.
+
+      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
+      work correctly both with client-side routing and a non-root public URL.
+      Learn how to configure a non-root public URL by running `npm run build`.
+
+      I think according to new design we should record not only update of result in annotation but review rejection/acceptance too, because in current way we can't show action range in the history, only result updating.
+
+      In current functionality we create history record if we pass a result field. It doesn't let make a comment on review. Because we decided to relate comments to history.
+      -->
+    <link rel="stylesheet" href="/styles/main.css">
+    <title>LSF</title>
+  </head>
+  <body>
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
+
+    <div id="header">
+      <a id="logo" href="/">
+        <img src="/images/ls_logo.svg" alt="label studio logo">
+      </a>
+      <ul id="nav">
+        <li><a href="https://labelstud.io/guide">Docs</a></li>
+        <li><a class="github-button" href="https://github.com/heartexlabs/label-studio"
+           data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star heartexlabs/label-studio on GitHub"><img src="./images/GitHub-Mark-64px.png" height="25" /></a></li>
+      </ul>
+    </div>
+
+    <div id="ls-container">
+      <div id="label-studio"></div>
+    </div>
+    <footer class="footer">
+      <span>
+        Made with <img src="/images/3nowhite.svg" height="16" /> by <a target="_blank" href="https://heartex.net">Heartex</a> in San Francisco
+      </span>
+    </footer>
+
+    <script>
+      (function (d, o) {
+          d.domReady = function (n, a) {
+              o.addEventListener && o.addEventListener("DOMContentLoaded", function e(t) {
+                  o.removeEventListener("DOMContentLoaded", e), n.call(a || d, t)
+              }) || o.attachEvent && o.attachEvent("onreadystatechange", function e(t) {
+                  "complete" === o.readyState && (o.detachEvent("onreadystatechange", e), n.call(a || d, t))
+              })
+          }
+      })(window, document);
+    </script>
+    <style>
+      body {
+        height: 100vh;
       }
 
-      globalPosition += length;
-    }
+      #label-studio {
+        height: calc(100vh - 88px);
+      }
+    </style>
+    <script>
+      const annotationHistory = [
+        //{"id":14,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "accepted","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        //{"id":15,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "updated","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        //{"id":16,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "rejected","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
 
-    currentNode = walker.nextNode();
-  }
+        //{"id":17,"created_by":1,"action_type": "draft-created","created_at":"2021-05-26T13:03:43.335198Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":34,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}]},
+        //{"id":18,"created_by":1,"action_type": "updated","created_at":"2021-05-26T13:03:43.335198Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":34,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}]},
+        //{"id":19,"created_by":1,"action_type": "submitted", "created_at":"2021-05-26T13:03:49.330745Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":35,"previous_annotation_history":34,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"},{"id":"ALbgPwBdmj","type":"labels","value":{"end":2215,"text":"ale8) December 31, 2017Tr","start":2190,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        {"id":19,"created_by":1,"action_type": "submitted", "created_at":"2021-05-26T13:03:49.330745Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":35,"previous_annotation_history":34,"result":[{ "original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0 }, "id": "EPcQbFzM5K", "from_name": "bbox", "to_name": "image", "type": "rectangle", "origin": "manual" }, { "original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0, "labels": ["Handwriting"]}, "id": "EPcQbFzM5K", "from_name": "label", "to_name": "image", "type": "labels", "origin": "manual"},{"original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0, "text": ["hello world"]}, "id": "EPcQbFzM5K", "from_name": "transcription", "to_name": "image", "type": "textarea", "origin": "manual"}]},
+      ]
+      domReady(function () {
+        var ls = new LabelStudio("label-studio", {
+          description: "Description",
+          interfaces: [
+              "panel",
+              "update",
+              "submit",
+              "skip",
+              "controls",
+              //"review",
+              "infobar",
+              "topbar",
+              "instruction",
+              "side-column",
+              "ground-truth",
+              "annotations:tabs",
+              "annotations:menu",
+              "annotations:current",
+              "annotations:add-new",
+              "annotations:delete",
+              'annotations:view-all',
+              "predictions:tabs",
+              "predictions:menu",
+              "auto-annotation",
+              "edit-history",
+              //"topbar:prevnext",
+          ],
+          user: {
+            "id": 1,
+            "first_name": "Nick",
+            "last_name": "Skriabin",
+            "username": "nick",
+            "email": "nick@heartex.ai",
+            "avatar": null,
+            "initials": "ni",
+          },
+          users: [
+            {
+              "id": 1,
+              "first_name": "Nick",
+              "last_name": "Skriabin",
+              "username": "nick",
+              "email": "nick@heartex.ai",
+              "avatar": null,
+              "initials": "ni",
+            }
+          ],
+          task: {
+            annotations: [],
+            predictions: [],
+            id: 1,
+            data: {
+              image: "https://htx-misc.s3.amazonaws.com/opensource/label-studio/examples/images/nick-owuor-astro-nic-visuals-wDifg5xc9Z4-unsplash.jpg"
+            }
+          },
+          history: annotationHistory,
+        });
 
-  return globalPosition;
-};
+        ls.on("storageInitialized", (store) => {
+          ls.on("selectAnnotation", (next) => {
+            if (next.type === 'annotation') {
+              store.setHistory(annotationHistory)
+            }
+          })
 
-export const isSelectionContainsSpan = (spanNode) => {
-  const selection = window.getSelection();
-  const spanRange = document.createRange();
-  const textNode = spanNode.childNodes[0];
-
-  spanRange.setStart(textNode, 0);
-  spanRange.setEnd(textNode, textNode.length);
-  for (let i = selection.rangeCount; i--;) {
-    const selRange = selection.getRangeAt(i);
-
-    if (selRange.compareBoundaryPoints(Range.START_TO_START, spanRange) < 1 && selRange.compareBoundaryPoints(Range.END_TO_END, spanRange) > -1) return true;
-  }
-  return false;
-};
+          ls.on("regionFinishedDrawing", (region, list) => {
+            console.log("finish drawing", {region, list})
+          })
+        })
+      });
+    </script>
+  </body>
+</html>

@@ -1,369 +1,155 @@
-import { getParent, getRoot, getSnapshot, types } from "mobx-state-tree";
-import { guidGenerator } from "../core/Helpers";
-import Registry from "../core/Registry";
-import { AnnotationMixin } from "../mixins/AnnotationMixin";
-import { isDefined } from "../utils/utilities";
-import { FF_DEV_1372, FF_DEV_2007, isFF } from "../utils/feature-flags";
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="//fonts.googleapis.com/css2?family=Roboto:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&display=swap" rel="stylesheet">
+    <link href="//fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="theme-color" content="#000000">
+    <!--
+      Notice the use of %PUBLIC_URL% in the tags above.
+      It will be replaced with the URL of the `public` folder during the build.
+      Only files inside the `public` folder can be referenced from the HTML.
 
-const Result = types
-  .model("Result", {
-    id: types.optional(types.identifier, guidGenerator),
-    // pid: types.optional(types.string, guidGenerator),
+      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
+      work correctly both with client-side routing and a non-root public URL.
+      Learn how to configure a non-root public URL by running `npm run build`.
 
-    score: types.maybeNull(types.number),
-    // @todo to readonly mixin
-    // readonly: types.optional(types.boolean, false),
+      I think according to new design we should record not only update of result in annotation but review rejection/acceptance too, because in current way we can't show action range in the history, only result updating.
 
-    // @why?
-    // hidden: types.optional(types.boolean, false),
+      In current functionality we create history record if we pass a result field. It doesn't let make a comment on review. Because we decided to relate comments to history.
+      -->
+    <link rel="stylesheet" href="/styles/main.css">
+    <title>LSF</title>
+  </head>
+  <body>
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
 
-    // @todo to mixins
-    // selected: types.optional(types.boolean, false),
-    // highlighted: types.optional(types.boolean, false),
+    <div id="header">
+      <a id="logo" href="/">
+        <img src="/images/ls_logo.svg" alt="label studio logo">
+      </a>
+      <ul id="nav">
+        <li><a href="https://labelstud.io/guide">Docs</a></li>
+        <li><a class="github-button" href="https://github.com/heartexlabs/label-studio"
+           data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star heartexlabs/label-studio on GitHub"><img src="./images/GitHub-Mark-64px.png" height="25" /></a></li>
+      </ul>
+    </div>
 
-    // @todo pid?
-    // parentID: types.optional(types.string, ""),
+    <div id="ls-container">
+      <div id="label-studio"></div>
+    </div>
+    <footer class="footer">
+      <span>
+        Made with <img src="/images/3nowhite.svg" height="16" /> by <a target="_blank" href="https://heartex.net">Heartex</a> in San Francisco
+      </span>
+    </footer>
 
-    // ImageRegion, TextRegion, HyperTextRegion, AudioRegion)),
-    // optional for classifications
-    // labeling/control tag
-    from_name: types.late(() => types.reference(types.union(...Registry.modelsArr()))),
-    // object tag
-    to_name: types.late(() => types.reference(types.union(...Registry.objectTypes()))),
-    // @todo some general type, maybe just a `string`
-    type: types.enumeration([
-      "labels",
-      "hypertextlabels",
-      "paragraphlabels",
-      "rectangle",
-      "keypoint",
-      "polygon",
-      "brush",
-      "ellipse",
-      "rectanglelabels",
-      "keypointlabels",
-      "polygonlabels",
-      "brushlabels",
-      "ellipselabels",
-      "timeserieslabels",
-      "choices",
-      "number",
-      "taxonomy",
-      "textarea",
-      "rating",
-      "pairwise",
-      "videorectangle",
-    ]),
-    // @todo much better to have just a value, not a hash with empty fields
-    value: types.model({
-      number: types.maybe(types.number),
-      rating: types.maybe(types.number),
-      text: types.maybe(types.union(types.string, types.array(types.string))),
-      ...(isFF(FF_DEV_2007)
-        ? { choices: types.maybe(types.array(types.union(types.string, types.array(types.string)))) }
-        : { choices: types.maybe(types.array(types.string)) }
-      ),
-      // pairwise
-      selected: types.maybe(types.enumeration(["left", "right"])),
-      // @todo all other *labels
-      labels: types.maybe(types.array(types.string)),
-      htmllabels: types.maybe(types.array(types.string)),
-      hypertextlabels: types.maybe(types.array(types.string)),
-      paragraphlabels: types.maybe(types.array(types.string)),
-      rectanglelabels: types.maybe(types.array(types.string)),
-      keypointlabels: types.maybe(types.array(types.string)),
-      polygonlabels: types.maybe(types.array(types.string)),
-      ellipselabels: types.maybe(types.array(types.string)),
-      brushlabels: types.maybe(types.array(types.string)),
-      timeserieslabels: types.maybe(types.array(types.string)),
-      taxonomy: types.frozen(), // array of arrays of strings
-      sequence: types.frozen(),
-    }),
-    // info about object and region
-    // meta: types.frozen(),
-  })
-  .views(self => ({
-    get perRegionStates() {
-      const states = self.states;
-
-      return states && states.filter(s => s.perregion === true);
-    },
-
-    get store() {
-      return getRoot(self);
-    },
-
-    get area() {
-      return getParent(self, 2);
-    },
-
-    get mainValue() {
-      return self.value[self.from_name.valueType];
-    },
-
-    mergeMainValue(value) {
-      value =  value?.toJSON ? value.toJSON() : value;
-      const mainValue = self.mainValue?.toJSON?.() ? self.mainValue?.toJSON?.() : self.mainValue;
-
-      if (typeof value !== typeof mainValue) return null;
-      if (self.type.endsWith("labels")) {
-        return value.filter(x => mainValue.includes(x));
-      }
-      return value === mainValue ? value : null;
-    },
-
-    get hasValue() {
-      const value = self.mainValue;
-
-      if (!isDefined(value)) return false;
-      if (Array.isArray(value)) return value.length > 0;
-      return true;
-    },
-
-    get editable() {
-      return self.readonly === false && self.annotation.editable === true;
-    },
-
-    getSelectedString(joinstr = " ") {
-      return self.mainValue?.join(joinstr) || "";
-    },
-
-    get selectedLabels() {
-      if (self.mainValue?.length === 0 && self.from_name.allowempty) {
-        return self.from_name.findLabel(null);
-      }
-      return self.mainValue?.map(value => self.from_name.findLabel(value)).filter(Boolean);
-    },
-
-    /**
-     * Checks perRegion and Visibility params
-     */
-    get isSubmitable() {
-      const control = self.from_name;
-
-      if (control.perregion) {
-        const label = control.whenlabelvalue;
-
-        if (label && !self.area.hasLabel(label)) return false;
+    <script>
+      (function (d, o) {
+          d.domReady = function (n, a) {
+              o.addEventListener && o.addEventListener("DOMContentLoaded", function e(t) {
+                  o.removeEventListener("DOMContentLoaded", e), n.call(a || d, t)
+              }) || o.attachEvent && o.attachEvent("onreadystatechange", function e(t) {
+                  "complete" === o.readyState && (o.detachEvent("onreadystatechange", e), n.call(a || d, t))
+              })
+          }
+      })(window, document);
+    </script>
+    <style>
+      body {
+        height: 100vh;
       }
 
-      const isChoiceSelected = () => {
-        const tagName = control.whentagname;
-        const choiceValues = control.whenchoicevalue ? control.whenchoicevalue.split(",") : null;
-        const results = self.annotation.results.filter(r => r.type === "choices" && r !== self);
-
-        if (tagName) {
-          const result = results.find(r => {
-            if (r.from_name.name !== tagName) return false;
-            // for perRegion choices we should check that they are in the same area
-            return !r.from_name.perregion || r.area === self.area;
-          });
-
-          if (!result) return false;
-          if (choiceValues && !choiceValues.some(v => result.mainValue.includes(v))) return false;
-        } else {
-          if (!results.length) return false;
-          // if no given choice value is selected in any choice result
-          if (choiceValues && !choiceValues.some(v => results.some(r => r.mainValue.includes(v)))) return false;
-        }
-        return true;
-      };
-
-      if (control.visiblewhen === "choice-selected") {
-        return isChoiceSelected();
-      } else if (isFF(FF_DEV_1372) && control.visiblewhen === "choice-unselected") {
-        return !isChoiceSelected();
+      #label-studio {
+        height: calc(100vh - 88px);
       }
+    </style>
+    <script>
+      const annotationHistory = [
+        //{"id":14,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "accepted","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        //{"id":15,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "updated","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        //{"id":16,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "rejected","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
 
-      return true;
-    },
+        //{"id":17,"created_by":1,"action_type": "draft-created","created_at":"2021-05-26T13:03:43.335198Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":34,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}]},
+        //{"id":18,"created_by":1,"action_type": "updated","created_at":"2021-05-26T13:03:43.335198Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":34,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}]},
+        //{"id":19,"created_by":1,"action_type": "submitted", "created_at":"2021-05-26T13:03:49.330745Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":35,"previous_annotation_history":34,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"},{"id":"ALbgPwBdmj","type":"labels","value":{"end":2215,"text":"ale8) December 31, 2017Tr","start":2190,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        {"id":19,"created_by":1,"action_type": "submitted", "created_at":"2021-05-26T13:03:49.330745Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":35,"previous_annotation_history":34,"result":[{ "original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0 }, "id": "EPcQbFzM5K", "from_name": "bbox", "to_name": "image", "type": "rectangle", "origin": "manual" }, { "original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0, "labels": ["Handwriting"]}, "id": "EPcQbFzM5K", "from_name": "label", "to_name": "image", "type": "labels", "origin": "manual"},{"original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0, "text": ["hello world"]}, "id": "EPcQbFzM5K", "from_name": "transcription", "to_name": "image", "type": "textarea", "origin": "manual"}]},
+      ]
+      domReady(function () {
+        var ls = new LabelStudio("label-studio", {
+          description: "Description",
+          interfaces: [
+              "panel",
+              "update",
+              "submit",
+              "skip",
+              "controls",
+              //"review",
+              "infobar",
+              "topbar",
+              "instruction",
+              "side-column",
+              "ground-truth",
+              "annotations:tabs",
+              "annotations:menu",
+              "annotations:current",
+              "annotations:add-new",
+              "annotations:delete",
+              'annotations:view-all',
+              "predictions:tabs",
+              "predictions:menu",
+              "auto-annotation",
+              "edit-history",
+              //"topbar:prevnext",
+          ],
+          user: {
+            "id": 1,
+            "first_name": "Nick",
+            "last_name": "Skriabin",
+            "username": "nick",
+            "email": "nick@heartex.ai",
+            "avatar": null,
+            "initials": "ni",
+          },
+          users: [
+            {
+              "id": 1,
+              "first_name": "Nick",
+              "last_name": "Skriabin",
+              "username": "nick",
+              "email": "nick@heartex.ai",
+              "avatar": null,
+              "initials": "ni",
+            }
+          ],
+          task: {
+            annotations: [],
+            predictions: [],
+            id: 1,
+            data: {
+              image: "https://htx-misc.s3.amazonaws.com/opensource/label-studio/examples/images/nick-owuor-astro-nic-visuals-wDifg5xc9Z4-unsplash.jpg"
+            }
+          },
+          history: annotationHistory,
+        });
 
-    get tag() {
-      const value = self.mainValue;
-
-      if (!value || !value.length) return null;
-      if (!self.from_name.findLabel) return null;
-      return self.from_name.findLabel(value[0]);
-    },
-
-    get style() {
-      if (!self.tag) return null;
-      const fillcolor = self.tag.background || self.tag.parent.fillcolor;
-
-      if (!fillcolor) return null;
-      const strokecolor = self.tag.background || self.tag.parent.strokecolor;
-      const { strokewidth, fillopacity, opacity } = self.tag.parent;
-
-      return { strokecolor, strokewidth, fillcolor, fillopacity, opacity };
-    },
-
-    get emptyStyle() {
-      const emptyLabel = self.from_name.emptyLabel;
-
-      if (!emptyLabel) return null;
-      const fillcolor = emptyLabel.background || emptyLabel.parent.fillcolor;
-
-      if (!fillcolor) return null;
-      const strokecolor = emptyLabel.background || emptyLabel.parent.strokecolor;
-      const { strokewidth, fillopacity, opacity } = emptyLabel.parent;
-
-      return { strokecolor, strokewidth, fillcolor, fillopacity, opacity };
-    },
-
-    get controlStyle() {
-      if (!self.from_name) return null;
-
-      const { fillcolor, strokecolor, strokewidth, fillopacity, opacity } = self.from_name;
-
-      return { strokecolor, strokewidth, fillcolor, fillopacity, opacity };
-    },
-  }))
-  .volatile(() => ({
-    pid: "",
-    selected: false,
-    // highlighted: types.optional(types.boolean, false),
-  }))
-  .actions(self => ({
-    setValue(value) {
-      self.value[self.from_name.valueType] = value;
-    },
-
-    afterCreate() {
-      self.pid = self.id;
-    },
-
-    afterAttach() {
-      // const tag = self.from_name;
-      // update state of classification tags
-      // @todo unify this with `selectArea`
-    },
-
-    setParentID(id) {
-      self.parentID = id;
-    },
-
-    // update region appearence based on it's current states, for
-    // example bbox needs to update its colors when you change the
-    // label, becuase it takes color from the label
-    updateAppearenceFromState() {},
-
-    serialize(options) {
-      const { from_name, to_name, type, score, value } = getSnapshot(self);
-      const { valueType } = self.from_name;
-      const data = self.area ? self.area.serialize(options) : {};
-
-      if (!data) return null;
-      if (!self.isSubmitable) return null;
-      // with `mergeLabelsAndResults` control uses only one result even with external `Labels`
-      if (type === "labels" && self.to_name.mergeLabelsAndResults) return null;
-      // cut off annotation id
-      const id = self.area.cleanId;
-
-      if (!isDefined(data.value)) data.value = {};
-
-      const contolMeta = self.from_name.metaValue;
-
-      if (contolMeta) {
-        data.meta = { ...data.meta, ...contolMeta };
-      }
-      const areaMeta = self.area.meta;
-
-      if (areaMeta && Object.keys(areaMeta).length) {
-        data.meta = { ...data.meta, ...areaMeta };
-      }
-
-      if (self.area.parentID) {
-        data.parentID = self.area.parentID.replace(/#.*/, "");
-      }
-
-      Object.assign(data, { id, from_name, to_name, type, origin: self.area.origin });
-
-      if (isDefined(value[valueType])) {
-        Object.assign(data.value, { [valueType]: value[valueType] });
-      }
-
-      if (typeof score === "number") data.score = score;
-
-      return data;
-    },
-
-    toStateJSON() {
-      const parent = self.parent;
-      const buildTree = control => {
-        const tree = {
-          id: self.pid,
-          from_name: control.name,
-          to_name: parent.name,
-          source: parent.value,
-          type: control.type,
-          parent_id: self.parentID === "" ? null : self.parentID,
-        };
-
-        if (self.normalization) tree["normalization"] = self.normalization;
-
-        return tree;
-      };
-
-      if (self.states && self.states.length) {
-        return self.states
-          .map(s => {
-            const ser = self.serialize(s, parent);
-
-            if (!ser) return null;
-
-            const tree = {
-              ...buildTree(s),
-              ...ser,
-            };
-
-            // in case of labels it's gonna be, labels: ["label1", "label2"]
-
-            return tree;
+        ls.on("storageInitialized", (store) => {
+          ls.on("selectAnnotation", (next) => {
+            if (next.type === 'annotation') {
+              store.setHistory(annotationHistory)
+            }
           })
-          .filter(Boolean);
-      } else {
-        const obj = self.annotation.toNames.get(parent.name);
-        const control = obj.length ? obj[0] : obj;
 
-        const tree = {
-          ...buildTree(control),
-          ...self.serialize(control, parent),
-        };
-
-        return tree;
-      }
-    },
-
-    /**
-     * Remove region
-     */
-    deleteRegion() {
-      if (!self.annotation.editable) return;
-
-      self.unselectRegion();
-
-      self.annotation.relationStore.deleteNodeRelation(self);
-
-      if (self.type === "polygonregion") {
-        self.destroyRegion();
-      }
-
-      self.annotation.regionStore.deleteRegion(self);
-
-      self.annotation.deleteRegion(self);
-    },
-
-    setHighlight(val) {
-      self._highlighted = val;
-    },
-
-    toggleHighlight() {
-      self.setHighlight(!self._highlighted);
-    },
-
-    toggleHidden() {
-      self.hidden = !self.hidden;
-    },
-  }));
-
-export default types.compose(Result, AnnotationMixin);
+          ls.on("regionFinishedDrawing", (region, list) => {
+            console.log("finish drawing", {region, list})
+          })
+        })
+      });
+    </script>
+  </body>
+</html>
