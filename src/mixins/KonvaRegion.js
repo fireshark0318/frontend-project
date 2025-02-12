@@ -1,10 +1,10 @@
-import { types } from "mobx-state-tree";
+import { types } from 'mobx-state-tree';
 
 export const KonvaRegionMixin = types.model({})
   .views((self) => {
     return {
       get bboxCoords() {
-        console.warn("KonvaRegionMixin needs to implement bboxCoords getter in regions");
+        console.warn('KonvaRegionMixin needs to implement bboxCoords getter in regions');
         return null;
       },
       get control() {
@@ -36,24 +36,31 @@ export const KonvaRegionMixin = types.model({})
         const ev = e?.evt || e;
         const additiveMode = ev?.ctrlKey || ev?.metaKey;
 
-        if (!annotation.editable || self.isDrawing || annotation.isDrawing) return;
         if (e) e.cancelBubble = true;
 
-        if (annotation.relationMode) {
+        const selectAction = () => {
+          self._selectArea(additiveMode);
+          deferredSelectId = null;
+        };
+
+        if (annotation.editable && annotation.relationMode) {
           annotation.addRelation(self);
           annotation.stopRelationMode();
           annotation.regionStore.unselectAll();
         } else {
+          // Skip double click emulation when there is nothing to focus
+          if (!self.perRegionFocusTarget) {
+            selectAction();
+            return;
+          }
+          // Double click emulation
           if (deferredSelectId) {
             clearTimeout(deferredSelectId);
             self.requestPerRegionFocus();
             deferredSelectId = null;
             annotation.selectArea(self);
           } else {
-            deferredSelectId = setTimeout(() => {
-              self._selectArea(additiveMode);
-              deferredSelectId = null;
-            }, 300);
+            deferredSelectId = setTimeout(selectAction, 300);
           }
         }
       },
