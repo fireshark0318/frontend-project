@@ -1,153 +1,220 @@
-import { DetailedHTMLProps, forwardRef, useCallback, useEffect, useRef, VideoHTMLAttributes } from 'react';
-import { guidGenerator } from '../../utils/unique';
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="//fonts.googleapis.com/css2?family=Roboto:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&display=swap" rel="stylesheet">
+    <link href="//fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="theme-color" content="#000000">
+    <!--
+      Notice the use of %PUBLIC_URL% in the tags above.
+      It will be replaced with the URL of the `public` folder during the build.
+      Only files inside the `public` folder can be referenced from the HTML.
 
-type VirtualVideoProps = DetailedHTMLProps<VideoHTMLAttributes<HTMLVideoElement>, HTMLVideoElement> & {
-  canPlayType?: (supported: boolean) => void,
-};
+      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
+      work correctly both with client-side routing and a non-root public URL.
+      Learn how to configure a non-root public URL by running `npm run build`.
 
-const DEBUG_MODE = false;
+      I think according to new design we should record not only update of result in annotation but review rejection/acceptance too, because in current way we can't show action range in the history, only result updating.
 
-const canPlayUrl = async (url: string) => {
-  const video = document.createElement('video');
+      In current functionality we create history record if we pass a result field. It doesn't let make a comment on review. Because we decided to relate comments to history.
+      -->
+    <link rel="stylesheet" href="/styles/main.css">
+    <title>LSF</title>
+  </head>
+  <body>
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
 
-  const fileMeta = await fetch(`${url}?lsv=${guidGenerator()}`, {
-    method: 'HEAD',
-  });
+    <div id="header">
+      <a id="logo" href="/">
+        <img src="/images/ls_logo.svg" alt="label studio logo">
+      </a>
+      <ul id="nav">
+        <li><a href="https://labelstud.io/guide">Docs</a></li>
+        <li><a class="github-button" href="https://github.com/heartexlabs/label-studio"
+           data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star heartexlabs/label-studio on GitHub"><img src="./images/GitHub-Mark-64px.png" height="25" /></a></li>
+      </ul>
+    </div>
 
-  const fileType = fileMeta.headers.get('content-type');
+    <div id="ls-container">
+      <div id="label-studio"></div>
+    </div>
+    <footer class="footer">
+      <span>
+        Made with <img src="/images/3nowhite.svg" height="16" /> by <a target="_blank" href="https://heartex.net">Heartex</a> in San Francisco
+      </span>
+    </footer>
 
-  return !!fileType && video.canPlayType(fileType) !== '';
-};
+    <script>
+      (function (d, o) {
+          d.domReady = function (n, a) {
+              o.addEventListener && o.addEventListener("DOMContentLoaded", function e(t) {
+                  o.removeEventListener("DOMContentLoaded", e), n.call(a || d, t)
+              }) || o.attachEvent && o.attachEvent("onreadystatechange", function e(t) {
+                  "complete" === o.readyState && (o.detachEvent("onreadystatechange", e), n.call(a || d, t))
+              })
+          }
+      })(window, document);
+    </script>
+    <style>
+      body {
+        height: 100vh;
+      }
 
-export const VirtualVideo = forwardRef<HTMLVideoElement, VirtualVideoProps>((props, ref) => {
-  const video = useRef<HTMLVideoElement | null>(null);
-  const source = useRef<HTMLSourceElement | null>(null);
-  const attachedEvents = useRef<[string, any][]>([]);
+      #label-studio {
+        height: calc(100vh - 88px);
+      }
+    </style>
+    <script>
+      const annotationHistory = [
+        //{"id":14,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "accepted","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        //{"id":15,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "updated","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        //{"id":16,"created_by":1,"created_at":"2021-05-26T13:03:36.267438Z","action_type": "rejected","result":null,"annotation":24,"fixed_annotation_history":null,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
 
-  const canPlayType = useCallback(async (url: string) => {
-    let supported = false;
 
-    if (url) {
-      supported = await canPlayUrl(url);
-    }
-
-    if (props.canPlayType) {
-      props.canPlayType(supported);
-    }
-    return supported;
-  }, [props.canPlayType]);
-
-  const createVideoElement = useCallback(() => {
-    const videoEl = document.createElement('video');
-
-    videoEl.muted = !!props.muted;
-    videoEl.controls = false;
-    videoEl.preload = 'auto';
-
-    Object.assign(videoEl.style, {
-      top: '-9999px',
-      width: 0,
-      height: 0,
-      position: 'absolute',
-    });
-
-    if (DEBUG_MODE) {
-      Object.assign(videoEl.style, {
-        top: 0,
-        zIndex: 10000,
-        width: '200px',
-        height: '200px',
-        position: 'absolute',
-      });
-    }
-
-    video.current = videoEl;
-  }, []);
-
-  const attachRef = useCallback((video: HTMLVideoElement | null) => {
-    if (ref instanceof Function) {
-      ref(video);
-    } else if (ref) {
-      ref.current = video;
-    }
-  }, []);
-
-  const attachEventListeners = () => {
-    const eventHandlers = Object
-      .entries(props)
-      .filter(([key]) => key.startsWith('on'))
-      .map(([evt, handler]) => [evt.toLowerCase(), handler]);
-
-    const attached: [string, any][] = [];
-
-    eventHandlers.forEach(([evt, handler]) => {
-      const evtName = evt.replace(/^on/, '');
-
-      video.current?.addEventListener(evtName, handler);
-      attached.push([evtName, handler]);
-    });
-
-    attachedEvents.current = attached;
-  };
-
-  const detachEventListeners = () => {
-    if (!video.current) return;
-
-    (attachedEvents.current ?? []).forEach(([evt, handler]) => {
-      video.current?.removeEventListener(evt, handler);
-    });
-
-    attachedEvents.current = [];
-  };
-
-  const unloadSource = () => {
-    if (source && video) {
-      video.current?.pause();
-      source.current?.setAttribute('src', '');
-      video.current?.load();
-      video.current = null;
-    }
-  };
-
-  const attachSource = useCallback(() => {
-    if (!video.current) return;
-
-    video.current?.pause();
-
-    if (source.current) unloadSource();
-
-    const sourceEl = document.createElement('source');
-
-    sourceEl.setAttribute('src', `${props.src}?lsv=${guidGenerator()}` ?? '');
-    video.current?.appendChild(sourceEl);
-
-    source.current = sourceEl;
-  }, [props.src]);
-
-  useEffect(() => {
-    detachEventListeners();
-    attachEventListeners();
-  });
-
-  // Create a video tag
-  useEffect(() => {
-    createVideoElement();
-    attachEventListeners();
-    canPlayType(props.src ?? '');
-    attachSource();
-    attachRef(video.current);
-
-    document.body.append(video.current!);
-  }, []);
-
-  // Handle video cleanup
-  useEffect(() => () => {
-    detachEventListeners();
-    unloadSource();
-    attachRef(null);
-    video.current?.remove();
-    video.current = null;
-  }, []);
-
-  return null;
+  return content ? (
+    <Block name="region-meta">
+      {content}
+    </Block>
+  ) : null;
 });
+
+export const RegionDetailsMain: FC<{region: any}> = observer(({
+  region,
+}) => {
+  return (
+    <>
+      <Elem name="result">
+        {(region?.results as any[]).map((res) => <ResultItem key={res.pid} result={res}/>)}
+        {region?.text ? (
+          <Block name="region-meta">
+            <Elem name="item">
+              <Elem
+                name="content"
+                mod={{ type: 'text' }}
+                dangerouslySetInnerHTML={{
+                  __html: region.text.replace(/\\n/g, '\n'),
+                }}
+              />
+            </Elem>
+          </Block>
+        ) : null}
+      </Elem>
+      <RegionEditor region={region}/>
+    </>
+  );
+});
+
+type RegionDetailsMetaProps = {
+  region: any,
+  editMode?: boolean,
+  cancelEditMode?: () => void,
+  enterEditMode?: () => void,
+}
+
+export const RegionDetailsMeta: FC<RegionDetailsMetaProps> = observer(({
+  region,
+  editMode,
+  cancelEditMode,
+  enterEditMode,
+}) => {
+  const bem = useBEM();
+  const input = useRef<HTMLTextAreaElement | null>();
+
+  const saveMeta = (value: string) => {
+    region.setMetaInfo(value);
+    region.setNormInput(value);
+  };
+
+  useEffect(() => {
+    if (editMode && input.current) {
+      const { current } = input;
+
+      current.focus();
+      current.setSelectionRange(current.value.length, current.value.length);
+    }
+  }, [editMode]);
+
+        //{"id":17,"created_by":1,"action_type": "draft-created","created_at":"2021-05-26T13:03:43.335198Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":34,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}]},
+        //{"id":18,"created_by":1,"action_type": "updated","created_at":"2021-05-26T13:03:43.335198Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":34,"previous_annotation_history":33,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}]},
+        //{"id":19,"created_by":1,"action_type": "submitted", "created_at":"2021-05-26T13:03:49.330745Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":35,"previous_annotation_history":34,"previous_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"}],"fixed_annotation_history_result":[{"id":"XsW_x1hflv","type":"labels","value":{"end":838,"text":"Media, a Happy and Healthy New Year. 2018 will be a great year for America!  Donald J. Trump (@realDonaldTrump) December 31, 2017Trump s tweet went down about as we","start":674,"labels":["LOC"]},"to_name":"text","from_name":"label"},{"id":"FCuvjfSXNs","type":"labels","value":{"end":1662,"text":" Sandoval (@AlanSandoval13) December 31, 2017Who uses the word Haters in a New Years wish??  Marlene (@marlene399) December 31, 2017You can t just say happy ","start":1505,"labels":["MISC"]},"to_name":"text","from_name":"label"},{"id":"36kM4Zy2Y5","type":"labels","value":{"end":256,"text":"o do and he couldn t do","start":233,"labels":["PER"]},"to_name":"text","from_name":"label"},{"id":"ALbgPwBdmj","type":"labels","value":{"end":2215,"text":"ale8) December 31, 2017Tr","start":2190,"labels":["MISC"]},"to_name":"text","from_name":"label"}]},
+        {"id":19,"created_by":1,"action_type": "submitted", "created_at":"2021-05-26T13:03:49.330745Z","accepted":true,"result":null,"annotation":24,"fixed_annotation_history":35,"previous_annotation_history":34,"result":[{ "original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0 }, "id": "EPcQbFzM5K", "from_name": "bbox", "to_name": "image", "type": "rectangle", "origin": "manual" }, { "original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0, "labels": ["Handwriting"]}, "id": "EPcQbFzM5K", "from_name": "label", "to_name": "image", "type": "labels", "origin": "manual"},{"original_width": 2242, "original_height": 2802, "image_rotation": 0, "value": { "x": 22.038567493112954, "y": 44.27312775330397, "width": 30.57851239669421, "height": 24.008810572687224, "rotation": 0, "text": ["hello world"]}, "id": "EPcQbFzM5K", "from_name": "transcription", "to_name": "image", "type": "textarea", "origin": "manual"}]},
+      ]
+      domReady(function () {
+        var ls = new LabelStudio("label-studio", {
+          description: "Description",
+          interfaces: [
+              "panel",
+              "update",
+              "submit",
+              "skip",
+              "controls",
+              //"review",
+              "infobar",
+              "topbar",
+              "instruction",
+              "side-column",
+              "ground-truth",
+              "annotations:tabs",
+              "annotations:menu",
+              "annotations:current",
+              "annotations:add-new",
+              "annotations:delete",
+              'annotations:view-all',
+              "predictions:tabs",
+              "predictions:menu",
+              "auto-annotation",
+              "edit-history",
+              //"topbar:prevnext",
+          ],
+          user: {
+            "id": 1,
+            "first_name": "Nick",
+            "last_name": "Skriabin",
+            "username": "nick",
+            "email": "nick@heartex.ai",
+            "avatar": null,
+            "initials": "ni",
+          },
+          users: [
+            {
+              "id": 1,
+              "first_name": "Nick",
+              "last_name": "Skriabin",
+              "username": "nick",
+              "email": "nick@heartex.ai",
+              "avatar": null,
+              "initials": "ni",
+            }
+          ],
+          task: {
+            annotations: [],
+            predictions: [],
+            id: 1,
+            data: {
+              image: "https://htx-misc.s3.amazonaws.com/opensource/label-studio/examples/images/nick-owuor-astro-nic-visuals-wDifg5xc9Z4-unsplash.jpg"
+            }
+          },
+          history: annotationHistory,
+        });
+
+
+        ls.on("storageInitialized", (store) => {
+          ls.on("selectAnnotation", (next) => {
+            if (next.type === 'annotation') {
+              store.setHistory(annotationHistory)
+            }
+          })
+
+          ls.on("regionFinishedDrawing", (region, list) => {
+            console.log("finish drawing", {region, list})
+          })
+        })
+      });
+    </script>
+  </body>
+</html>

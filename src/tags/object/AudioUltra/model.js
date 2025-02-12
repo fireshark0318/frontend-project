@@ -1,5 +1,5 @@
 import { observe } from 'mobx';
-import { getRoot, getType, types } from 'mobx-state-tree';
+import { getEnv, getRoot, getType, types } from 'mobx-state-tree';
 import { customTypes } from '../../../core/CustomTypes';
 import { guidGenerator, restoreNewsnapshot } from '../../../core/Helpers.ts';
 import { AnnotationMixin } from '../../../mixins/AnnotationMixin';
@@ -49,6 +49,7 @@ import { WS_SPEED, WS_VOLUME, WS_ZOOM_X } from './constants';
  * @param {boolean} [autocenter=true] – Always place cursor in the middle of the view
  * @param {boolean} [scrollparent=true] – Wave scroll smoothly follows the cursor
  * @param {boolean} [splitchannels=true] – Display stereo channels separately
+ * @param {string} [decoder=ffmpeg] – Decoder type to use to decode audio data. ("ffmpeg" or "webaudio")
  */
 const TagAttrs = types.model({
   name: types.identifier,
@@ -71,6 +72,7 @@ const TagAttrs = types.model({
   autocenter: types.optional(types.boolean, true),
   scrollparent: types.optional(types.boolean, true),
   splitchannels: types.optional(types.boolean, isFF(FF_LSDV_3028)), // FF_LSDV_3028: true by default when on
+  decoder: types.optional(types.enumeration(['ffmpeg', 'webaudio']), 'ffmpeg'),
 });
 
 export const AudioModel = types.compose(
@@ -442,7 +444,17 @@ export const AudioModel = types.compose(
         },
 
         onError(error) {
-          self.errors = [error];
+          let messageHandler;
+
+          if (error.name === 'HTTPError') {
+            messageHandler = 'ERR_LOADING_HTTP';
+          } else {
+            messageHandler = 'ERR_LOADING_AUDIO';
+          }
+
+          const message = getEnv(self.store).messages[messageHandler]({ attr: self.value, url: self._value, error: error.message });
+
+          self.errors = [message];
         },
 
         beforeDestroy() {
